@@ -6,6 +6,7 @@ use App\Models\Master\Bidang;
 use App\Models\Master\JenisPekerjaan;
 use App\Models\Master\Perusahaan;
 use App\Models\Master\StatusPekerjaan;
+use App\Models\PekerjaanPersonil;
 use App\Services\DeadlineCalculatorService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -68,6 +69,20 @@ class Pekerjaan extends Model
     public function updatedBy()
     {
         return $this->belongsTo(\App\Models\User::class, 'updated_by');
+    }
+
+    public function personil()
+    {
+        return $this->hasMany(PekerjaanPersonil::class);
+    }
+
+    public function tenagaAhli()
+    {
+        return $this->belongsToMany(
+            \App\Models\Master\TenagaAhli::class,
+            'pekerjaan_personil'
+        )->withPivot(['jabatan_kontrak', 'nilai_honor_kontrak', 'tanggal_mulai_tugas', 'tanggal_akhir_tugas', 'is_active'])
+         ->withTimestamps();
     }
 
     public function scopeTahun($query, $tahun)

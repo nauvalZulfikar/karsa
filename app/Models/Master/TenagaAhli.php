@@ -45,4 +45,20 @@ class TenagaAhli extends Model
     {
         return $this->belongsTo(Perusahaan::class, 'perusahaan_id');
     }
+
+    public function pekerjaan()
+    {
+        return $this->belongsToMany(
+            \App\Models\Pekerjaan::class,
+            'pekerjaan_personil'
+        )->withPivot(['jabatan_kontrak', 'nilai_honor_kontrak', 'tanggal_mulai_tugas', 'tanggal_akhir_tugas', 'is_active'])
+         ->withTimestamps();
+    }
+
+    public function pekerjaanAktif()
+    {
+        return $this->pekerjaan()
+            ->wherePivot('is_active', true)
+            ->whereHas('statusPekerjaan', fn ($q) => $q->where('kode', '!=', 'selesai'));
+    }
 }

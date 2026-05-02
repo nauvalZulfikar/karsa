@@ -321,7 +321,9 @@ class PekerjaanResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\PersonilRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

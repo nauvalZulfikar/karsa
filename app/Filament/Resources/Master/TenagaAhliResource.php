@@ -126,6 +126,12 @@ class TenagaAhliResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (bool $state) => $state ? 'Aktif' : 'Nonaktif')
                     ->color(fn (bool $state) => $state ? 'success' : 'danger'),
+
+                TextColumn::make('pekerjaan_aktif_count')
+                    ->label('Proyek Aktif')
+                    ->counts('pekerjaanAktif')
+                    ->badge()
+                    ->color(fn ($state) => $state > 0 ? 'info' : 'gray'),
             ])
             ->filters([
                 TernaryFilter::make('is_active')
@@ -140,6 +146,11 @@ class TenagaAhliResource extends Resource
             ->actions([
                 EditAction::make(),
             ]);
+    }
+
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        return parent::getEloquentQuery()->withCount('pekerjaanAktif');
     }
 
     public static function getPages(): array
