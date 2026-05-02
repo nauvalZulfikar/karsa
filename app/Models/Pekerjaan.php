@@ -6,6 +6,7 @@ use App\Models\Master\Bidang;
 use App\Models\Master\JenisPekerjaan;
 use App\Models\Master\Perusahaan;
 use App\Models\Master\StatusPekerjaan;
+use App\Services\DeadlineCalculatorService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -77,5 +78,49 @@ class Pekerjaan extends Model
     public function scopeBidang($query, $bidangId)
     {
         return $query->where('bidang_id', $bidangId);
+    }
+
+    public function getSisaHariAttribute(): ?int
+    {
+        if (!$this->tanggal_akhir) return null;
+        return app(DeadlineCalculatorService::class)
+            ->hitungSisaHariKerja($this->tanggal_akhir, $this->satuan_waktu);
+    }
+
+    public function getPersenWaktuTerpakaiAttribute(): ?float
+    {
+        return app(DeadlineCalculatorService::class)
+            ->hitungPersenWaktu($this->tanggal_mulai, $this->tanggal_akhir, $this->satuan_waktu);
+    }
+
+    public function getStatusWaktuAttribute(): string
+    {
+        $sudahSelesai = $this->statusPekerjaan?->kode === 'selesai';
+        return app(DeadlineCalculatorService::class)
+            ->getStatusWaktu($this->sisa_hari, $sudahSelesai);
+    }
+
+    public function getStatusWaktuLabelAttribute(): string
+    {
+        return match($this->status_waktu) {
+            'aman'       => 'Aman',
+            'waspada'    => 'Waspada',
+            'kritis'     => 'Kritis',
+            'terlambat'  => 'Terlambat',
+            'selesai'    => 'Selesai',
+            default      => 'Belum Mulai',
+        };
+    }
+
+    public function getStatusWaktuColorAttribute(): string
+    {
+        return match($this->status_waktu) {
+            'aman'      => 'success',
+            'waspada'   => 'warning',
+            'kritis'    => 'danger',
+            'terlambat' => 'danger',
+            'selesai'   => 'success',
+            default     => 'gray',
+        };
     }
 }

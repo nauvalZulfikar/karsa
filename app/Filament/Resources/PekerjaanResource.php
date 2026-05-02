@@ -218,6 +218,23 @@ class PekerjaanResource extends Resource
                     ->money('IDR')
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('status_waktu_label')
+                    ->label('Traffic Light')
+                    ->badge()
+                    ->color(fn ($record) => $record->status_waktu_color)
+                    ->sortable(false),
+
+                Tables\Columns\TextColumn::make('sisa_hari')
+                    ->label('Sisa Hari Kerja')
+                    ->suffix(fn ($record) => $record->sisa_hari !== null ? ' hari' : '')
+                    ->color(fn ($record) => match($record->status_waktu) {
+                        'kritis', 'terlambat' => 'danger',
+                        'waspada' => 'warning',
+                        'aman', 'selesai' => 'success',
+                        default => 'gray',
+                    })
+                    ->sortable(false),
+
                 Tables\Columns\TextColumn::make('statusPekerjaan.nama')
                     ->label('Status')
                     ->badge()
@@ -264,6 +281,29 @@ class PekerjaanResource extends Resource
                     ->searchable(),
 
                 Tables\Filters\TrashedFilter::make(),
+
+                Tables\Filters\Filter::make('deadline_minggu_ini')
+                    ->label('Deadline Minggu Ini')
+                    ->query(fn ($query) => $query
+                        ->whereNotNull('tanggal_akhir')
+                        ->whereBetween('tanggal_akhir', [
+                            now()->startOfWeek(),
+                            now()->endOfWeek(),
+                        ])),
+
+                Tables\Filters\Filter::make('sudah_terlambat')
+                    ->label('Sudah Terlambat')
+                    ->query(fn ($query) => $query
+                        ->whereNotNull('tanggal_akhir')
+                        ->where('tanggal_akhir', '<', now())
+                        ->whereHas('statusPekerjaan', fn ($q) => $q->where('kode', '!=', 'selesai'))),
+
+                Tables\Filters\Filter::make('selesai_bulan_ini')
+                    ->label('Selesai Bulan Ini')
+                    ->query(fn ($query) => $query
+                        ->whereHas('statusPekerjaan', fn ($q) => $q->where('kode', 'selesai'))
+                        ->whereMonth('updated_at', now()->month)
+                        ->whereYear('updated_at', now()->year)),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
