@@ -62,10 +62,12 @@ class UserResource extends Resource
                 ->preload()
                 ->multiple(false),
 
-            TextInput::make('bidang_id')
+            Select::make('bidang_id')
                 ->label('Bidang')
+                ->options(\App\Models\Master\Bidang::active()->pluck('nama', 'id'))
                 ->nullable()
-                ->hint('Diisi setelah Phase 3'),
+                ->placeholder('Semua Bidang')
+                ->searchable(),
 
             TextInput::make('no_telp')
                 ->label('No. Telepon')
