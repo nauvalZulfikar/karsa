@@ -35,6 +35,6 @@ class Bidang extends Model
 
     public function pekerjaan()
     {
-        return null;
+        return $this->hasMany(\App\Models\Pekerjaan::class);
     }
 }

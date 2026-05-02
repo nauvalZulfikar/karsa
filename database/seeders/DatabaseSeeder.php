@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             PerusahaanSeeder::class,
             JenisPekerjaanSeeder::class,
             StatusPekerjaanSeeder::class,
+            PekerjaanSeeder::class,
         ]);
     }
 }
