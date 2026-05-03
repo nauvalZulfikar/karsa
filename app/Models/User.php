@@ -22,6 +22,7 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'bidang_id',
+        'perusahaan_id',
         'no_telp',
         'is_active',
     ];
@@ -60,8 +61,16 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasRole('vendor');
     }
 
+    public function perusahaan()
+    {
+        return $this->belongsTo(\App\Models\Master\Perusahaan::class);
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
+        if ($panel->getId() === 'vendor') {
+            return $this->is_active && $this->hasRole('vendor');
+        }
         return $this->is_active && ! $this->hasRole('vendor');
     }
 }

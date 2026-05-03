@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\LaporanHarian;
 use App\Models\Master\Bidang;
+use App\Models\RencanaPengadaan;
+use App\Models\RealisasiPengadaan;
 use App\Models\Master\JenisPekerjaan;
 use App\Models\Master\Perusahaan;
 use App\Models\Master\StatusPekerjaan;
@@ -76,6 +79,19 @@ class Pekerjaan extends Model
         return $this->hasMany(PekerjaanPersonil::class);
     }
 
+    public function vendors()
+    {
+        return $this->belongsToMany(
+            \App\Models\Master\Perusahaan::class,
+            'pekerjaan_vendor'
+        )->withTimestamps();
+    }
+
+    public function laporanHarian()
+    {
+        return $this->hasMany(LaporanHarian::class);
+    }
+
     public function tenagaAhli()
     {
         return $this->belongsToMany(
@@ -83,6 +99,31 @@ class Pekerjaan extends Model
             'pekerjaan_personil'
         )->withPivot(['jabatan_kontrak', 'nilai_honor_kontrak', 'tanggal_mulai_tugas', 'tanggal_akhir_tugas', 'is_active'])
          ->withTimestamps();
+    }
+
+    public function rencanaPengadaan()
+    {
+        return $this->hasMany(RencanaPengadaan::class);
+    }
+
+    public function realisasiPengadaan()
+    {
+        return $this->hasMany(RealisasiPengadaan::class);
+    }
+
+    public function dokumen()
+    {
+        return $this->hasMany(Dokumen::class);
+    }
+
+    public function terminPembayaran()
+    {
+        return $this->hasMany(TerminPembayaran::class);
+    }
+
+    public function milestones()
+    {
+        return $this->hasMany(MilestonePekerjaan::class)->orderBy('urutan');
     }
 
     public function scopeTahun($query, $tahun)

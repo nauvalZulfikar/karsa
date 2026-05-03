@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'wa_gateway' => [
+        'provider' => env('WA_GATEWAY_PROVIDER', 'fonnte'),
+        'token'    => env('WA_GATEWAY_TOKEN', ''),
+        'sender'   => env('WA_GATEWAY_SENDER', ''),
+    ],
+
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY', ''),
+    ],
+
 ];

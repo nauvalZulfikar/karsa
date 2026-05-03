@@ -27,6 +27,10 @@ class UserResource extends Resource
 
     protected static ?string $navigationLabel = 'Pengguna';
 
+    protected static ?string $navigationGroup = 'Pengaturan';
+
+    protected static ?int $navigationSort = 5;
+
     protected static ?string $modelLabel = 'Pengguna';
 
     public static function shouldRegisterNavigation(): bool

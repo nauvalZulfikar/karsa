@@ -1,0 +1,39 @@
+{
+    "name": "DPUTR Project Management",
+    "short_name": "DPUTR PM",
+    "description": "Sistem Manajemen Proyek DPUTR Kabupaten Bandung",
+    "start_url": "/admin",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#ffffff",
+    "theme_color": "#f59e0b",
+    "lang": "id",
+    "icons": [
+        {
+            "src": "/pwa-icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa-icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Daftar Pekerjaan",
+            "url": "/admin/pekerjaans",
+            "description": "Lihat semua proyek"
+        },
+        {
+            "name": "Laporan Harian",
+            "url": "/admin/laporan-harians",
+            "description": "Lihat laporan vendor hari ini"
+        }
+    ],
+    "categories": ["productivity", "business"]
+}

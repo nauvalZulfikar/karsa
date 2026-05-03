@@ -12,6 +12,7 @@ class TimelinePekerjaan extends Page implements HasForms
 {
     use InteractsWithForms;
 
+    protected static bool $shouldRegisterNavigation = false;
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
     protected static ?string $navigationLabel = 'Timeline';
     protected static ?string $title = 'Timeline Pekerjaan';

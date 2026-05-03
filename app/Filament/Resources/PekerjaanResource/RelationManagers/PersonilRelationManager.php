@@ -30,7 +30,22 @@ class PersonilRelationManager extends RelationManager
                     if ($ta?->jabatan_keahlian) {
                         $set('jabatan_kontrak', $ta->jabatan_keahlian);
                     }
-                }),
+                })
+                ->createOptionForm([
+                    Forms\Components\TextInput::make('nama')
+                        ->label('Nama Lengkap')->required()->maxLength(150),
+                    Forms\Components\TextInput::make('jabatan_keahlian')
+                        ->label('Jabatan Keahlian')->placeholder('Team Leader, Surveyor, Drafter, dll')->maxLength(150),
+                    Forms\Components\Select::make('perusahaan_id')
+                        ->label('Perusahaan')
+                        ->options(\App\Models\Master\Perusahaan::aktif()->pluck('nama', 'id'))
+                        ->searchable()
+                        ->nullable(),
+                    Forms\Components\TextInput::make('nik')->label('NIK')->maxLength(20),
+                    Forms\Components\TextInput::make('no_telp')->label('No HP')->maxLength(20),
+                    Forms\Components\TextInput::make('email')->email()->maxLength(100),
+                ])
+                ->createOptionUsing(fn (array $data) => TenagaAhli::create($data + ['is_active' => true])->id),
 
             Forms\Components\TextInput::make('jabatan_kontrak')
                 ->label('Jabatan pada Kontrak')

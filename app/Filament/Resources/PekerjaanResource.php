@@ -9,16 +9,21 @@ use App\Models\Master\Perusahaan;
 use App\Models\Master\StatusPekerjaan;
 use App\Models\Pekerjaan;
 use App\Services\KickoffParserService;
+use App\Models\FilterPreset;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
+use Filament\Resources\GlobalSearch\GlobalSearchResult;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class PekerjaanResource extends Resource
 {
     protected static ?string $model = Pekerjaan::class;
+    protected static bool $shouldRegisterNavigation = false;
     protected static ?string $navigationIcon = 'heroicon-o-briefcase';
     protected static ?string $navigationLabel = 'Pekerjaan';
     protected static ?string $modelLabel = 'Pekerjaan';
@@ -58,7 +63,22 @@ class PekerjaanResource extends Resource
                             ->options(JenisPekerjaan::active()->ordered()->pluck('nama', 'id'))
                             ->nullable()
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('nama')
+                                    ->label('Nama Jenis Pekerjaan')
+                                    ->required()
+                                    ->maxLength(150),
+                                Forms\Components\Textarea::make('keterangan')
+                                    ->label('Keterangan (opsional)')
+                                    ->rows(2),
+                            ])
+                            ->createOptionUsing(fn (array $data) => JenisPekerjaan::create([
+                                'nama'        => $data['nama'],
+                                'keterangan'  => $data['keterangan'] ?? null,
+                                'is_active'   => true,
+                                'urutan'      => (JenisPekerjaan::max('urutan') ?? 0) + 1,
+                            ])->id),
                     ]),
 
                     Forms\Components\TextInput::make('nama_pekerjaan')
@@ -73,7 +93,22 @@ class PekerjaanResource extends Resource
                             ->options(Perusahaan::aktif()->pluck('nama', 'id'))
                             ->nullable()
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('nama')
+                                    ->label('Nama Perusahaan')
+                                    ->required()
+                                    ->maxLength(200),
+                                Forms\Components\Select::make('jenis')
+                                    ->label('Jenis')
+                                    ->options(['PT' => 'PT', 'CV' => 'CV', 'Perorangan' => 'Perorangan', 'Lainnya' => 'Lainnya'])
+                                    ->required()
+                                    ->default('PT'),
+                                Forms\Components\TextInput::make('npwp')->label('NPWP')->maxLength(20),
+                                Forms\Components\TextInput::make('pic_nama')->label('Nama PIC')->maxLength(100),
+                                Forms\Components\TextInput::make('pic_telp')->label('No HP PIC')->maxLength(20),
+                            ])
+                            ->createOptionUsing(fn (array $data) => Perusahaan::create($data + ['is_blacklisted' => false])->id),
 
                         Forms\Components\Select::make('status_pekerjaan_id')
                             ->label('Status')
@@ -305,6 +340,44 @@ class PekerjaanResource extends Resource
                         ->whereMonth('updated_at', now()->month)
                         ->whereYear('updated_at', now()->year)),
             ])
+            ->headerActions([
+                Tables\Actions\Action::make('simpan_preset')
+                    ->label('Simpan Filter sebagai Preset')
+                    ->icon('heroicon-o-bookmark')
+                    ->color('gray')
+                    ->form([
+                        Forms\Components\TextInput::make('nama')
+                            ->label('Nama Preset')
+                            ->required()
+                            ->maxLength(100)
+                            ->placeholder('Contoh: Bidang Saya Tahun 2026'),
+                        Forms\Components\Select::make('bidang_id')
+                            ->label('Bidang')
+                            ->options(\App\Models\Master\Bidang::active()->pluck('nama', 'id'))
+                            ->nullable(),
+                        Forms\Components\Select::make('tahun_anggaran')
+                            ->label('Tahun Anggaran')
+                            ->options(array_combine(range(date('Y') - 2, date('Y') + 1), range(date('Y') - 2, date('Y') + 1)))
+                            ->nullable(),
+                        Forms\Components\Select::make('status_pekerjaan_id')
+                            ->label('Status')
+                            ->options(\App\Models\Master\StatusPekerjaan::ordered()->pluck('nama', 'id'))
+                            ->nullable(),
+                    ])
+                    ->action(function (array $data) {
+                        FilterPreset::create([
+                            'user_id'  => auth()->id(),
+                            'resource' => 'pekerjaan',
+                            'nama'     => $data['nama'],
+                            'filters'  => array_filter([
+                                'bidang_id'           => $data['bidang_id'] ?? null,
+                                'tahun_anggaran'      => $data['tahun_anggaran'] ?? null,
+                                'status_pekerjaan_id' => $data['status_pekerjaan_id'] ?? null,
+                            ]),
+                        ]);
+                        Notification::make()->title('Preset tersimpan — muat ulang halaman untuk melihat tab baru')->success()->send();
+                    }),
+            ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
@@ -323,6 +396,12 @@ class PekerjaanResource extends Resource
     {
         return [
             \App\Filament\Resources\PekerjaanResource\RelationManagers\PersonilRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\VendorRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\RencanaPengadaanRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\RealisasiPengadaanRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\DokumenRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\TerminPembayaranRelationManager::class,
+            \App\Filament\Resources\PekerjaanResource\RelationManagers\MilestoneRelationManager::class,
         ];
     }
 
@@ -345,5 +424,29 @@ class PekerjaanResource extends Resource
     {
         $user = auth()->user();
         return $user && $user->is_active && ! $user->hasRole('vendor');
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['nama_pekerjaan', 'no_spk', 'no_spmk', 'catatan'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        return $record->nama_pekerjaan;
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            'Bidang'   => $record->bidang?->nama ?? '-',
+            'Status'   => $record->statusPekerjaan?->nama ?? '-',
+            'Progres'  => ($record->progres_persen ?? 0) . '%',
+        ];
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['bidang', 'statusPekerjaan']);
     }
 }
