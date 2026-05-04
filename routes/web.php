@@ -5,7 +5,7 @@ use App\Http\Controllers\ImportTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect('/admin');
 });
 
 Route::middleware(['auth'])->group(function () {
