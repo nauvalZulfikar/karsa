@@ -7,13 +7,13 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/root/projects/karsa"
-REPO_URL="https://github.com/nauvalZulfikar/karsa.git"
-DOMAIN="karsa.aureonforge.com"  # ubah sesuai mau dipakai
-DB_NAME="karsa"
-DB_USER="karsa"
-DB_PASS_FILE="/root/.karsa_db_pass"
-PHP_VERSION="8.2"
+PROJECT_DIR="${PROJECT_DIR:-/root/projects/karta}"
+REPO_URL="${REPO_URL:-https://github.com/nauvalZulfikar/karsa.git}"
+DOMAIN="${DOMAIN:-karta.aureonforge.com}"
+DB_NAME="${DB_NAME:-karta}"
+DB_USER="${DB_USER:-karta}"
+DB_PASS_FILE="${DB_PASS_FILE:-/root/.karta_db_pass}"
+PHP_VERSION="${PHP_VERSION:-8.2}"
 
 log() { echo -e "\033[1;34m▶\033[0m $*"; }
 err() { echo -e "\033[1;31m✗\033[0m $*" >&2; }
