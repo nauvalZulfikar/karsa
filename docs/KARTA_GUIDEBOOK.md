@@ -508,6 +508,10 @@ Klik **Buka Detail Lengkap** → halaman detail Pekerjaan dengan 7 tab horizonta
 
 ![Pekerjaan Detail](./screenshots/10-pekerjaan-detail.png)
 
+Tampilan full page dengan section info pekerjaan + tab navigator di bawah:
+
+![Pekerjaan Detail Full Page](./screenshots/20-pekerjaan-tabs-overview.png)
+
 | Tab | Isinya |
 |---|---|
 | **Personil** | Daftar tenaga ahli yang assigned + jabatan + honor |
@@ -525,6 +529,25 @@ Kalau perlu daftar semua proyek:
 ![Pekerjaan List](./screenshots/09-pekerjaan-list.png)
 
 URL: `/admin/pekerjaans` (atau klik card di Kanban).
+
+### Filter Tab di Pekerjaan List
+
+Di atas tabel ada filter tab cepat — klik untuk filter tanpa buka panel:
+
+| Filter | Tampilan |
+|---|---|
+| **Tahun 2026** — semua proyek tahun aktif | ![Filter Tahun 2026](./screenshots/22a-filter-tahun-2026.png) |
+| **Sedang Berjalan** — proyek aktif | ![Filter Sedang Berjalan](./screenshots/22b-filter-sedang-berjalan.png) |
+| **Terlambat** — yang lewat deadline | ![Filter Terlambat](./screenshots/22c-filter-terlambat.png) |
+| **Selesai** — yang sudah closeout | ![Filter Selesai](./screenshots/22d-filter-selesai.png) |
+
+### Form Tambah Pekerjaan Manual
+
+Kalau tidak pakai Import Kontrak, klik **Tambah Pekerjaan** untuk input manual:
+
+![Form Tambah Pekerjaan](./screenshots/21-form-tambah-pekerjaan.png)
+
+Form dengan field-field standar: Bidang, Jenis Pekerjaan, Vendor, No SPK/SPMK, Nilai Pagu/Kontrak, Tanggal Mulai/Akhir.
 
 ---
 
@@ -647,6 +670,12 @@ Esok pagi, Bendahara siap kerja sebelum sampai kantor.
 
 ## Master Data Pages
 
+### 🏢 Bidang
+
+![Master Bidang](./screenshots/23-master-bidang.png)
+
+Daftar bidang/divisi (Jalan, Drainase, Jembatan, dst). Tiap pekerjaan harus dipasangkan ke 1 bidang.
+
 ### 🏢 Perusahaan
 
 ![Master Perusahaan](./screenshots/15-master-perusahaan.png)
@@ -673,7 +702,7 @@ CRUD user, assign role:
 
 ## System Settings
 
-![System Settings](./screenshots/13-system-settings.png)
+![System Settings](./screenshots/24-system-settings-full.png)
 
 Setting global aplikasi (super_admin only):
 - **Informasi Instansi** — nama, alamat, telepon
