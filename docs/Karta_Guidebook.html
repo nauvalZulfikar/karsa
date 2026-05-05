@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Karta Guidebook</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Serif:ital,wght@0,400;0,700;1,400;1,600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --amber-50:  #fffbeb;
+    --amber-100: #fef3c7;
+    --amber-200: #fde68a;
+    --amber-300: #fcd34d;
+    --amber-400: #fbbf24;
+    --amber-500: #f59e0b;
+    --amber-600: #d97706;
+    --amber-700: #b45309;
+    --amber-800: #92400e;
+    --teal-50:   #f0fdfa;
+    --teal-100:  #ccfbf1;
+    --teal-500:  #14b8a6;
+    --teal-600:  #0d9488;
+    --teal-700:  #0f766e;
+    --gray-50:   #f9fafb;
+    --gray-100:  #f3f4f6;
+    --gray-200:  #e5e7eb;
+    --gray-300:  #d1d5db;
+    --gray-400:  #9ca3af;
+    --gray-500:  #6b7280;
+    --gray-600:  #4b5563;
+    --gray-700:  #374151;
+    --gray-800:  #1f2937;
+    --gray-900:  #111827;
+    --red-50:    #fef2f2;
+    --red-500:   #ef4444;
+    --red-600:   #dc2626;
+    --blue-50:   #eff6ff;
+    --blue-500:  #3b82f6;
+    --blue-600:  #2563eb;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  body {
+    color: var(--gray-800);
+    line-height: 1.6;
+    font-size: 10.5pt;
+    background: white;
+    font-feature-settings: "liga" on, "kern" on;
+  }
+
+  .page { max-width: 210mm; margin: 0 auto; }
+
+  /* === COVER === */
+  .cover {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #92400e 0%, #d97706 45%, #f59e0b 100%);
+    color: #fff; text-align: center;
+    padding: 60px 40px;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.12), transparent 70%);
+    top: -200px; right: -200px;
+    pointer-events: none;
+  }
+  .cover-badge {
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 999px;
+    padding: 6px 18px;
+    font-size: 0.75rem; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 28px; display: inline-block;
+  }
+  .cover-emoji { font-size: 64pt; margin-bottom: 16px; line-height: 1; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.2)); }
+  .cover h1 {
+    font-size: 3.2rem; font-weight: 900; color: #fff;
+    margin-bottom: 12px; line-height: 1.1; letter-spacing: -2px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .cover .tagline {
+    font-size: 1.2rem; font-weight: 600; opacity: 0.95;
+    margin-bottom: 8px;
+  }
+  .cover .subtitle {
+    font-size: 0.95rem; opacity: 0.85;
+    max-width: 480px; margin: 0 auto;
+    font-style: italic; line-height: 1.6;
+  }
+  .cover-meta {
+    display: flex; gap: 48px; justify-content: center;
+    margin-top: 48px;
+  }
+  .cover-meta-item .val { font-size: 1.6rem; font-weight: 800; }
+  .cover-meta-item .lbl { font-size: 0.7rem; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.06em; }
+  .cover-foot {
+    position: absolute; bottom: 28px;
+    font-size: 0.75rem; opacity: 0.7;
+  }
+  .cover-foot a { color: #fff; text-decoration: none; font-weight: 700; }
+
+  /* === TOC === */
+  .toc-page {
+    padding: 60px 50px 40px;
+    page-break-after: always;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .toc-page h2 {
+    color: var(--amber-700);
+    font-size: 1.8rem;
+    margin-bottom: 24px;
+    border: none; padding: 0; background: none;
+  }
+  .toc-item {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px dotted var(--gray-200);
+  }
+  .toc-item .num {
+    font-weight: 700; color: var(--amber-700);
+    min-width: 50px; font-size: 0.85rem;
+  }
+  .toc-item .title { flex: 1; font-weight: 500; color: var(--gray-800); font-size: 0.95rem; }
+  .toc-item .time {
+    font-size: 0.75rem; color: var(--teal-600); font-weight: 700;
+    white-space: nowrap; padding: 2px 10px;
+    background: var(--teal-50); border-radius: 999px;
+  }
+
+  /* === CHAPTER === */
+  .chapter {
+    padding: 28px 28px 24px;
+    page-break-before: always;
+    page-break-inside: auto;
+  }
+  .chapter.intro { page-break-before: avoid; padding-top: 50px; }
+
+  .chapter-header {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 22px;
+    padding: 16px 20px;
+    background: linear-gradient(90deg, var(--amber-50), #fff 80%);
+    border-left: 5px solid var(--amber-500);
+    border-radius: 0 10px 10px 0;
+    page-break-after: avoid;
+  }
+  .chapter-header .ch-num {
+    font-size: 0.7rem; font-weight: 800; color: var(--amber-700);
+    text-transform: uppercase; letter-spacing: 0.12em;
+    min-width: 50px;
+  }
+  .chapter-header .ch-title {
+    margin: 0; font-size: 1.5rem; color: var(--gray-900);
+    font-weight: 700; flex: 1;
+    border: none; padding: 0;
+  }
+  .chapter-header .ch-time {
+    font-size: 0.75rem; background: var(--teal-600); color: #fff;
+    border-radius: 999px; padding: 4px 14px; font-weight: 700;
+    white-space: nowrap; letter-spacing: 0.04em;
+  }
+
+  /* === HEADINGS within chapter === */
+  h1 { display: none; } /* h1 replaced by chapter-header */
+  h2 {
+    font-size: 1.25rem;
+    color: var(--amber-700);
+    font-weight: 700;
+    margin: 24px 0 12px;
+    padding-left: 10px;
+    border-left: 3px solid var(--amber-400);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 1.05rem;
+    color: var(--teal-700);
+    font-weight: 700;
+    margin: 18px 0 8px;
+    page-break-after: avoid;
+  }
+  h4 {
+    font-size: 0.92rem;
+    color: var(--gray-700);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 14px 0 6px;
+    page-break-after: avoid;
+  }
+
+  /* === PARAGRAPHS === */
+  p { margin: 0 0 10pt; line-height: 1.65; }
+  strong { font-weight: 700; color: var(--gray-900); }
+  em { font-style: italic; color: var(--amber-700); }
+
+  /* === LISTS === */
+  ul, ol { margin: 6pt 0 10pt 22pt; }
+  li { margin: 3pt 0; line-height: 1.55; }
+  ul li::marker { color: var(--amber-500); font-size: 1.1em; }
+  ol li::marker { color: var(--amber-700); font-weight: 700; }
+
+  /* === CALLOUTS === */
+  blockquote.callout {
+    margin: 14pt 0;
+    padding: 14pt 18pt;
+    border-radius: 0 10pt 10pt 0;
+    border-left: 4px solid;
+    font-size: 10pt;
+    line-height: 1.65;
+    page-break-inside: avoid;
+  }
+  blockquote.callout p { margin: 0 0 5pt; }
+  blockquote.callout p:last-child { margin-bottom: 0; }
+
+  /* Story — italic serif (narrative) */
+  blockquote.story {
+    background: var(--amber-50);
+    border-left-color: var(--amber-500);
+    font-family: 'Noto Serif', Georgia, serif;
+    font-style: italic;
+    font-size: 10.5pt;
+    line-height: 1.75;
+    color: var(--gray-800);
+  }
+  blockquote.story strong { font-style: normal; color: var(--amber-700); }
+  blockquote.story em { color: var(--amber-700); }
+
+  /* Tip / warning / chat */
+  blockquote.tip {
+    background: var(--teal-50);
+    border-left-color: var(--teal-600);
+    color: var(--gray-800);
+  }
+  blockquote.warning {
+    background: var(--red-50);
+    border-left-color: var(--red-600);
+    color: var(--gray-800);
+  }
+  blockquote.chat {
+    background: var(--blue-50);
+    border-left-color: var(--blue-500);
+    color: var(--gray-800);
+    font-style: normal;
+  }
+  blockquote.chat em { color: var(--blue-600); font-style: italic; font-weight: 500; }
+
+  /* === CODE === */
+  code {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 9pt;
+    background: var(--amber-50);
+    color: var(--amber-700);
+    padding: 1pt 5pt;
+    border-radius: 3pt;
+    border: 1px solid var(--amber-100);
+  }
+  pre {
+    background: var(--gray-900);
+    color: #e5e7eb;
+    padding: 12pt 14pt;
+    border-radius: 8pt;
+    overflow-x: auto;
+    font-size: 8.5pt;
+    line-height: 1.55;
+    margin: 12pt 0;
+    page-break-inside: avoid;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+  }
+  pre code {
+    background: transparent; color: inherit;
+    padding: 0; border: none;
+  }
+
+  /* === TABLES === */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12pt 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+    border-radius: 8pt;
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  thead {
+    background: linear-gradient(135deg, var(--amber-500), var(--amber-600));
+    color: #fff;
+  }
+  th {
+    padding: 8pt 11pt;
+    text-align: left;
+    font-weight: 700;
+    font-size: 9.5pt;
+    letter-spacing: 0.02em;
+  }
+  td {
+    padding: 7pt 11pt;
+    border-bottom: 1px solid var(--gray-200);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  tbody tr:nth-child(even) { background: var(--gray-50); }
+  tbody tr:last-child td { border-bottom: none; }
+  td img { max-width: 100%; max-height: 38mm; border-radius: 4pt; border: 1px solid var(--gray-200); }
+  td .screen { margin: 0; }
+  td .screen-titlebar { display: none; }
+  td .screen-body { padding: 0; background: #fff; }
+  td .screen-cap { display: none; }
+
+  /* === SCREEN MOCKUP (browser frame around screenshots) === */
+  .screen {
+    margin: 16pt 0;
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 10pt;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    page-break-inside: avoid;
+  }
+  .screen-titlebar {
+    background: var(--gray-800);
+    color: #fff;
+    padding: 6pt 12pt;
+    display: flex;
+    align-items: center;
+    gap: 6pt;
+    font-size: 8pt;
+  }
+  .screen-titlebar .dot {
+    width: 9pt; height: 9pt; border-radius: 50%; display: inline-block;
+  }
+  .screen-titlebar .dot-r { background: #ff5f56; }
+  .screen-titlebar .dot-y { background: #ffbd2e; }
+  .screen-titlebar .dot-g { background: #27c93f; }
+  .screen-titlebar .url {
+    background: rgba(255,255,255,0.15);
+    border-radius: 4pt;
+    padding: 2pt 10pt;
+    font-size: 8pt;
+    margin-left: 8pt;
+    font-family: 'JetBrains Mono', monospace;
+    color: rgba(255,255,255,0.9);
+  }
+  .screen-body {
+    padding: 8pt;
+    background: #fff;
+    text-align: center;
+  }
+  .screen-body img {
+    max-width: 100%;
+    max-height: 110mm;
+    height: auto;
+    width: auto;
+    border-radius: 4pt;
+  }
+  .screen-cap {
+    padding: 6pt 14pt 9pt;
+    font-size: 8.5pt;
+    color: var(--gray-500);
+    font-style: italic;
+    text-align: center;
+    background: #fff;
+  }
+
+  /* === LINKS === */
+  a {
+    color: var(--amber-700);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--amber-300);
+    font-weight: 500;
+  }
+
+  /* === HORIZONTAL RULE === */
+  hr {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--amber-300) 20%, var(--amber-300) 80%, transparent);
+    margin: 18pt 0;
+  }
+
+  /* === PRINT === */
+  @media print {
+    @page { size: A4; margin: 14mm 14mm 18mm; }
+    .cover { min-height: auto; padding: 50px 40px; page-break-after: always; }
+    .toc-page { page-break-after: always; }
+    .chapter { page-break-before: always; padding: 20px 18px; }
+    .chapter.intro { page-break-before: avoid; }
+    .screen, blockquote, table, pre { page-break-inside: avoid; }
+    .chapter-header, h2, h3, h4 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- COVER -->
+<div class="cover">
+  <span class="cover-badge">Versi 1.0 · Mei 2026</span>
+  <div class="cover-emoji">📘</div>
+  <h1>Karta</h1>
+  <div class="tagline">Project Management. Done by AI.</div>
+  <div class="subtitle">Panduan Pengguna — Sehari Bersama Karta dalam Format Cerita yang Mudah Diikuti</div>
+  <div class="cover-meta">
+    <div class="cover-meta-item"><div class="val">20</div><div class="lbl">Bab</div></div>
+    <div class="cover-meta-item"><div class="val">36</div><div class="lbl">Screenshot</div></div>
+    <div class="cover-meta-item"><div class="val">A4</div><div class="lbl">Format</div></div>
+  </div>
+  <div class="cover-foot">🌐 <a href="https://karta.aureonforge.com">karta.aureonforge.com</a></div>
+</div>
+
+<!-- TOC -->
+<div class="toc-page">
+  <h2>📖 Daftar Isi</h2>
+  
+    <div class="toc-item">
+      <span class="num">Bab 1</span>
+      <span class="title">📘 Karta Guidebook</span>
+      <span class="time">—</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 2</span>
+      <span class="title">🌅 Bangun, Cek WA Digest</span>
+      <span class="time">06:30</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 3</span>
+      <span class="title">🏢 Sampai Kantor, Login</span>
+      <span class="time">07:45</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 4</span>
+      <span class="title">💬 Tanya AI Apa Saja</span>
+      <span class="time">08:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 5</span>
+      <span class="title">🎯 Brief Mendadak ke Kabid</span>
+      <span class="time">08:30</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 6</span>
+      <span class="title">📑 Vendor Kirim PDF Kontrak</span>
+      <span class="time">09:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 7</span>
+      <span class="title">📷 Vendor di Lapangan</span>
+      <span class="time">10:15</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 8</span>
+      <span class="title">📊 Cek Laporan Harian</span>
+      <span class="time">11:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 9</span>
+      <span class="title">💰 PPK Approve Termin</span>
+      <span class="time">13:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 10</span>
+      <span class="title">🔍 Investigasi Anomali</span>
+      <span class="time">14:30</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 11</span>
+      <span class="title">🗓️ Plan Resource via Kalender</span>
+      <span class="time">15:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 12</span>
+      <span class="title">📋 Filter Kanban per Bidang</span>
+      <span class="time">16:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 13</span>
+      <span class="title">📤 Export Sebelum Pulang</span>
+      <span class="time">17:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 14</span>
+      <span class="title">🚪 Logout</span>
+      <span class="time">17:15</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 15</span>
+      <span class="title">🌙 Karta Tetap Kerja Sendiri</span>
+      <span class="time">21:00</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 16</span>
+      <span class="title">📊 Recap Hari Pak Dimas</span>
+      <span class="time">—</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 17</span>
+      <span class="title">📌 Lampiran: Sidebar Cheat Sheet</span>
+      <span class="time">—</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 18</span>
+      <span class="title">🆘 Troubleshooting</span>
+      <span class="time">—</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 19</span>
+      <span class="title">💡 Filosofi Karta</span>
+      <span class="time">—</span>
+    </div>
+    <div class="toc-item">
+      <span class="num">Bab 20</span>
+      <span class="title">🎓 Quick Wins untuk User Baru</span>
+      <span class="time">—</span>
+    </div>
+</div>
+
+<!-- CHAPTERS -->
+
+<section class="chapter" id="ch1">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 1</span>
+    <h2 class="ch-title">📘 Karta Guidebook</h2>
+    
+  </div>
+  <h2>Sehari Bersama Karta — Project Management Tool</h2>
+<blockquote class="callout story"><p><strong>Tutorial format cerita:</strong> ikuti satu hari kerja Pak Dimas (Admin Bidang Jalan), Bu Sari (Vendor), dan Bu Ratna (PPK) — kamu akan paham 90% fitur Karta tanpa perlu hafal menu.</p>
+</blockquote><p><strong>🔗 Akses Production:</strong> <a href="https://karta.aureonforge.com">https://karta.aureonforge.com</a>
+<strong>📧 Login default:</strong> <code>admin@dputr.go.id</code> / <code>password</code> <em>(ganti segera setelah login pertama!)</em></p>
+<hr>
+<h2>📚 Daftar Isi</h2>
+<ol>
+<li><a href="#-0630--bangun-cek-wa-digest">🌅 06:30 — Bangun, Cek WA Digest</a></li>
+<li><a href="#-0745--sampai-kantor-login">🏢 07:45 — Sampai Kantor, Login</a></li>
+<li><a href="#-0800--tanya-ai-apa-saja">💬 08:00 — Tanya AI Apa Saja</a></li>
+<li><a href="#-0830--brief-mendadak-ke-kabid">🎯 08:30 — Brief Mendadak ke Kabid</a></li>
+<li><a href="#-0900--vendor-kirim-pdf-kontrak">📑 09:00 — Vendor Kirim PDF Kontrak</a></li>
+<li><a href="#-1015--vendor-di-lapangan">📷 10:15 — Vendor di Lapangan</a></li>
+<li><a href="#-1100--cek-laporan-harian">📊 11:00 — Cek Laporan Harian</a></li>
+<li><a href="#-1300--ppk-approve-termin">💰 13:00 — PPK Approve Termin</a></li>
+<li><a href="#-1430--investigasi-anomali">🔍 14:30 — Investigasi Anomali</a></li>
+<li><a href="#-1500--plan-resource-via-kalender">🗓️ 15:00 — Plan Resource via Kalender</a></li>
+<li><a href="#-1600--filter-kanban-per-bidang">📋 16:00 — Filter Kanban per Bidang</a></li>
+<li><a href="#-1700--export-sebelum-pulang">📤 17:00 — Export Sebelum Pulang</a></li>
+<li><a href="#-1715--logout">🚪 17:15 — Logout</a></li>
+<li><a href="#-lampiran-sidebar-cheat-sheet">📌 Lampiran: Sidebar Cheat Sheet</a></li>
+<li><a href="#-troubleshooting">🆘 Troubleshooting</a></li>
+</ol>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch2">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 2</span>
+    <h2 class="ch-title">🌅 Bangun, Cek WA Digest</h2>
+    <span class="ch-time">⏰ 06:30</span>
+  </div>
+  <p>Alarm bunyi jam 6 pagi. Pak Dimas masih di kasur. Belum sempat duduk, HP sudah berdering — bukan telepon, tapi notifikasi WhatsApp dari <strong>Karta Bot</strong>:</p>
+<pre><code>📊 Ringkasan Mingguan — Periode 5–11 Mei 2026
+
+🚦 Status Proyek (total 72)
+🟢 Aman: 12 • 🟡 Waspada: 5 • 🔴 Kritis/Terlambat: 27
+✅ Selesai minggu lalu: 3
+
+⚠️ Perlu perhatian:
+• Rehabilitasi Jalan Soreang — terlambat 5 hari
+• Drainase Margahayu — deadline 3 hari lagi, progres 71%
+• DED Jembatan Banjaran — terlambat 8 hari
+
+💰 4 termin menunggu approval PPK
+</code></pre>
+<p>Pak Dimas baca sambil masih tiduran. Sudah tau prioritas hari ini sebelum mandi.</p>
+<h3>🛠️ Cara Setup</h3>
+<ul>
+<li>Admin: isi <code>WA_GATEWAY_TOKEN</code> di <strong>Pengaturan → Pengaturan Sistem</strong></li>
+<li>User: pastikan <code>no_telp</code> di profile sudah benar</li>
+<li>Cron otomatis kirim <strong>Senin pagi 07:00</strong></li>
+</ul>
+<h3>💡 Manfaat</h3>
+<ul>
+<li>Tau prioritas tanpa perlu buka aplikasi</li>
+<li>Bisa rencana mental sambil sarapan</li>
+<li>Tidak ada lagi excuse &quot;saya gak tau ada deadline&quot;</li>
+</ul>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch3">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 3</span>
+    <h2 class="ch-title">🏢 Sampai Kantor, Login</h2>
+    <span class="ch-time">⏰ 07:45</span>
+  </div>
+  <h2>Login Page</h2>
+<p>Pak Dimas buka <a href="https://karta.aureonforge.com">https://karta.aureonforge.com</a> → otomatis redirect ke <code>/admin/login</code>.</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/01-login-page.png" alt="Login Page" /></div>
+  <div class="screen-cap">Login Page</div>
+</div></p>
+<p>Masukkan email + password → klik Sign in.</p>
+<blockquote class="callout warning"><p>⚠️ <strong>Wajib ganti password setelah login pertama</strong> — production live di internet, jangan biarkan default.</p>
+</blockquote><h2>Dashboard — Landing Page</h2>
+<p>Setelah login, dashboard langsung tampil dengan layout 5 area:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/02b-dashboard-top.png" alt="Dashboard Top" /></div>
+  <div class="screen-cap">Dashboard Top</div>
+</div></p>
+<p><strong>Dari atas ke bawah:</strong></p>
+<ol>
+<li><strong>AccountWidget</strong> — sapaan + tombol <strong>Keluar</strong> (logout dari sini)</li>
+<li><strong>3 Action Buttons</strong> — <code>📑 Import Kontrak</code> · <code>📤 Export Data</code> · <code>🗓️ Kalender</code></li>
+<li><strong>AI Chat Hero</strong> — full width, langsung ada greeting + status report otomatis</li>
+<li><strong>Quick Suggestion Buttons</strong> — 4 pertanyaan cepat</li>
+<li><strong>Input Box Chat</strong> — ketik bebas</li>
+</ol>
+<h3>Status Report Otomatis (di Chat Hero)</h3>
+<p>Di dalam chat hero, ada <strong>bubble kedua</strong> yang otomatis muncul tiap kali buka dashboard:</p>
+<pre><code>📊 Status Hari Ini · Senin, 5 Mei 2026
+──────────────────────────────
+
+📋 Ringkasan Proyek 2026
+Total: 72 • Aktif: 59 • Selesai: 13
+
+🚦 Status Waktu
+🟢 Aman: 0   🟡 Waspada: 0   🔴 Kritis: 0
+⛔ Terlambat: 27   ⏸ Backlog: 32
+
+⚠️ Perlu Perhatian
+• Perencanaan Teknik Pembangunan Drainase — terlambat 41 hari
+• DED Jalan Kabupaten Wilayah Ciwidey — terlambat 25 hari
+
+📝 Hari Ini
+• 0 laporan harian masuk
+</code></pre>
+<h3>Full Dashboard</h3>
+<p>Scroll ke bawah, masih ada widget tambahan:</p>
+<ul>
+<li><strong>Papan Pekerjaan Kanban</strong> (Trello-style)</li>
+<li><strong>4 Stats</strong> (Proyek Aktif, Total Nilai, Laporan Pending, Termin Menunggu)</li>
+<li><strong>6 Traffic Light</strong> (distribusi status semua proyek)</li>
+<li><strong>Bar Chart</strong> distribusi progres</li>
+<li><strong>Tabel Laporan Vendor Hari Ini</strong></li>
+</ul>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch4">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 4</span>
+    <h2 class="ch-title">💬 Tanya AI Apa Saja</h2>
+    <span class="ch-time">⏰ 08:00</span>
+  </div>
+  <p>Pak Dimas sambil sruput kopi, ketik di chat hero:</p>
+<blockquote class="callout chat"><p>👨 <em>&quot;berapa proyek aktif?&quot;</em></p>
+</blockquote><p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/03a-chat-typing-question.png" alt="Chat Typing Question" /></div>
+  <div class="screen-cap">Chat Typing Question</div>
+</div></p>
+<p>Tekan Enter — pesan kamu <strong>langsung muncul instant</strong> sebagai bubble amber di kanan, plus typing dots animasi:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/03b-chat-user-bubble-instant.png" alt="Chat User Bubble Instant" /></div>
+  <div class="screen-cap">Chat User Bubble Instant</div>
+</div></p>
+<p>~4-8 detik kemudian, AI balas:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/03c-chat-ai-response.png" alt="Chat AI Response" /></div>
+  <div class="screen-cap">Chat AI Response</div>
+</div></p>
+<blockquote class="callout chat"><p>🤖 <em>&quot;Saat ini terdapat 6 proyek aktif. Jika ada yang ingin Anda ketahui lebih lanjut, silakan beri tahu saya!&quot;</em></p>
+</blockquote><h2>3 Tipe Perintah AI</h2>
+<h3>Tipe A: Tanya Informasi (Langsung Dijawab)</h3>
+<pre><code>&quot;berapa proyek kritis hari ini?&quot;
+&quot;detail proyek nomor 23&quot;
+&quot;info pekerjaan jalan soreang&quot;
+&quot;laporan harian hari ini&quot;
+&quot;siapa personil di proyek drainase margahayu?&quot;
+&quot;milestone proyek nomor 18&quot;
+&quot;termin yang masih draft&quot;
+</code></pre>
+<h3>Tipe B: Minta Action (AI Konfirmasi Dulu)</h3>
+<pre><code>&quot;update progres jalan soreang jadi 75%&quot;
+&quot;approve termin 2 drainase margahayu&quot;
+&quot;milestone mobilisasi proyek 23 sudah selesai&quot;
+</code></pre>
+<p><strong>Flow:</strong></p>
+<ol>
+<li>Kamu ketik perintah</li>
+<li>AI balas: <em>&quot;Konfirmasi: ... (ya/tidak)&quot;</em></li>
+<li>Ketik <strong>&quot;ya&quot;</strong> → AI eksekusi</li>
+<li>AI: <em>&quot;✅ Berhasil. ...&quot;</em></li>
+</ol>
+<h3>Tipe C: Floating Chat di Halaman Lain</h3>
+<p>Ada juga ikon chat <strong>teal bulat</strong> di pojok kanan-bawah halaman manapun:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/17-floating-chat-button.png" alt="Floating Chat Button" /></div>
+  <div class="screen-cap">Floating Chat Button</div>
+</div></p>
+<p>Klik → drawer chat terbuka:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/17b-floating-chat-open.png" alt="Floating Chat Open" /></div>
+  <div class="screen-cap">Floating Chat Open</div>
+</div></p>
+<p>Fungsinya sama persis dengan chat hero di dashboard — bisa pakai dari halaman manapun.</p>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch5">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 5</span>
+    <h2 class="ch-title">🎯 Brief Mendadak ke Kabid</h2>
+    <span class="ch-time">⏰ 08:30</span>
+  </div>
+  <p>Pak Dimas baru duduk, langsung ditembak Kabid:</p>
+<blockquote class="callout chat"><p>👔 <em>&quot;Pak Dimas, gimana proyek Drainase Margahayu? Mau di-PHO kapan?&quot;</em></p>
+</blockquote><p>Tanpa panik, sambil tetap natap muka Kabid, tangannya ngetik di chat Karta:</p>
+<blockquote class="callout chat"><p>👨 <em>&quot;detail termin drainase margahayu&quot;</em></p>
+</blockquote><p>5 detik kemudian:</p>
+<blockquote class="callout chat"><p>🤖 <em>&quot;4 termin. Termin 1 (uang muka 30%) sudah dibayar 12 Maret. Termin 2 sudah disetujui PPK, menunggu pencairan. Termin 3 (PHO) belum diajukan—syarat progres 100%. Progres saat ini 71%.&quot;</em></p>
+</blockquote><p>Pak Dimas jawab Kabid dengan tenang: <em>&quot;Pak, target 100% Jumat ini, jadi PHO bisa minggu depan. Termin 2 sudah disetujui Bu Ratna, tinggal nunggu Bendahara.&quot;</em></p>
+<p>Kabid manggut puas, lanjut topik lain.</p>
+<blockquote class="callout tip"><p>💡 <strong>Dulu</strong> rapat dadakan kayak gini bikin grogi karena harus buka 3 file Excel dulu. Sekarang chat 1 baris sudah cukup.</p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch6">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 6</span>
+    <h2 class="ch-title">📑 Vendor Kirim PDF Kontrak</h2>
+    <span class="ch-time">⏰ 09:00</span>
+  </div>
+  <p>Email masuk dari kontraktor baru — <em>PT Sinar Konstruksi</em> — kirim PDF kontrak proyek &quot;Pembangunan Jembatan Pasirjambu&quot;, 8 halaman penuh angka.</p>
+<p><strong>Dulu</strong> Pak Dimas akan luangkan 25 menit input manual ke Excel.</p>
+<h2>Cara Pakai Import Kontrak</h2>
+<h3>Step 1: Klik Tombol &quot;📑 Import Kontrak&quot; di Dashboard</h3>
+<p>Tombol amber paling atas, di sebelah Export Data dan Kalender.</p>
+<h3>Step 2: Modal Upload Muncul</h3>
+<p>Modal popup minta upload file PDF:</p>
+<ul>
+<li>Maksimal 10 MB</li>
+<li><strong>Wajib PDF digital</strong> (bukan hasil scan/foto)</li>
+<li>Helper text: <em>&quot;AI akan baca dokumen, ekstrak data, dan buka form Tambah Pekerjaan dengan field sudah terisi. Tinggal review &amp; simpan.&quot;</em></li>
+</ul>
+<h3>Step 3: Klik &quot;Proses Dokumen&quot;</h3>
+<p>Tunggu <strong>10-15 detik</strong>. AI baca dokumen via OpenAI GPT-4o-mini, ekstrak field.</p>
+<h3>Step 4: Notifikasi Sukses</h3>
+<blockquote class="callout story"><p>✅ <em>&quot;Dokumen berhasil dibaca. Ditemukan 4 termin pembayaran &amp; 7 milestone — akan dibuat otomatis setelah disimpan.&quot;</em></p>
+</blockquote><h3>Step 5: Auto-redirect ke Form Tambah Pekerjaan</h3>
+<p>Form sudah terisi otomatis:</p>
+<ul>
+<li>✅ Nama pekerjaan</li>
+<li>✅ No SPK + tanggal</li>
+<li>✅ No SPMK + tanggal</li>
+<li>✅ Nilai pagu + nilai kontrak</li>
+<li>✅ Tanggal mulai + akhir</li>
+<li>✅ Hari kerja + satuan waktu</li>
+<li>✅ Vendor (kalau sudah ada di database, atau notif &quot;belum ada, mau buat baru?&quot;)</li>
+</ul>
+<h3>Step 6: Lengkapi yang Kosong</h3>
+<p>Yang AI <strong>tidak bisa tebak</strong> dan harus manual:</p>
+<ul>
+<li><strong>Bidang</strong> (Bangunan Gedung / Jalan / Drainase / dll) — pilih dari dropdown</li>
+<li><strong>Status</strong> (default: Belum Mulai) — kalau sudah jalan, ganti ke Proses Desain</li>
+</ul>
+<blockquote class="callout tip"><p>💡 <strong>Quick-add inline:</strong> kalau jenis pekerjaan / perusahaan / tenaga ahli <strong>belum ada di dropdown</strong>, klik ikon <code>+</code> di pojok dropdown → mini modal muncul → isi nama baru → save → otomatis ter-pilih. Tidak perlu keluar form.</p>
+</blockquote><h3>Step 7: Klik Simpan</h3>
+<p>Notifikasi terakhir:</p>
+<blockquote class="callout story"><p>✅ <em>&quot;Berhasil membuat 4 termin &amp; 7 milestone dari kontrak.&quot;</em></p>
+</blockquote><p><strong>Total waktu: ~90 detik.</strong> Versus 25-30 menit input manual.</p>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch7">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 7</span>
+    <h2 class="ch-title">📷 Vendor di Lapangan</h2>
+    <span class="ch-time">⏰ 10:15</span>
+  </div>
+  <p>Bu Sari (vendor PT Karya Maju) lagi ngawasin tukang cor lapis bawah di lokasi proyek Drainase Margahayu. Pekerjaan kelar jam 10 pagi, perlu lapor.</p>
+<h2>Vendor Portal — URL Terpisah</h2>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/18-vendor-login.png" alt="Vendor Login" /></div>
+  <div class="screen-cap">Vendor Login</div>
+</div></p>
+<p>Vendor pakai <strong>URL berbeda</strong> dari admin:</p>
+<ul>
+<li>🔗 <a href="https://karta.aureonforge.com/vendor">https://karta.aureonforge.com/vendor</a></li>
+</ul>
+<p>UI lebih sederhana, mobile-first, tombol besar (44px+ untuk touch screen).</p>
+<h3>Step 1: Setup Vendor User (Sekali, oleh Admin)</h3>
+<ol>
+<li>Sidebar → <strong>Pengaturan</strong> ▶ → <strong>Pengguna</strong></li>
+<li>Tambah user baru</li>
+<li><strong>Role:</strong> vendor</li>
+<li><strong>Perusahaan:</strong> pilih dari dropdown (vendor harus link ke 1 perusahaan)</li>
+<li>Save → kasih credential ke vendor</li>
+</ol>
+<h3>Step 2: Vendor Login dari HP</h3>
+<ol>
+<li>Vendor buka URL <code>/vendor</code> di Chrome HP</li>
+<li>Banner muncul: <em>&quot;📱 Install Karta di HP kamu&quot;</em> → klik <strong>Install</strong></li>
+<li>App ter-install di home screen, buka tanpa browser bar (PWA)</li>
+<li>Login pakai credential dari admin</li>
+</ol>
+<h3>Step 3: Submit Laporan Harian</h3>
+<p>Klik menu <strong>Submit Laporan Harian:</strong></p>
+<ul>
+<li>📷 <strong>Foto</strong> — kamera HP otomatis aktif</li>
+<li>📍 <strong>GPS</strong> — auto-capture lokasi (kalau diizinkan browser)</li>
+<li>⏰ <strong>Waktu</strong> — tertangkap otomatis (server time)</li>
+<li><strong>Pilih jenis:</strong> masuk / pulang / progress</li>
+<li><strong>Catatan:</strong> apa yang dikerjain hari ini</li>
+<li>Submit ✓</li>
+</ul>
+<p><strong>Selesai dalam ~30 detik.</strong></p>
+<blockquote class="callout tip"><p>💡 <strong>Foto + GPS + timestamp tersimpan = audit-grade evidence.</strong> Tidak bisa dipalsukan. Audit BPK seneng.</p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch8">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 8</span>
+    <h2 class="ch-title">📊 Cek Laporan Harian</h2>
+    <span class="ch-time">⏰ 11:00</span>
+  </div>
+  <p>Pak Dimas balik ke laptop. Tanya AI:</p>
+<blockquote class="callout chat"><p>👨 <em>&quot;laporan harian hari ini siapa aja yang udah masuk&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;Hari ini ada 5 laporan: 09:30 Drainase Margahayu (Bu Sari, foto+GPS ✓), 09:45 Jalan Soreang (Pak Adit), 10:17 Drainase Margahayu lapis bawah selesai, 10:30 DED Jembatan Ciwidey (Pak Tono), 10:50 Rehabilitasi Trotoar (Bu Lina). 3 vendor lain belum laporan: Survey Topografi, Pengadaan Aspal, Pengawasan Banjaran.&quot;</em></p>
+</blockquote><h2>Lihat Laporan via Menu</h2>
+<p>Sidebar → <strong>Laporan Harian</strong>:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/11-laporan-harian-list.png" alt="Laporan Harian List" /></div>
+  <div class="screen-cap">Laporan Harian List</div>
+</div></p>
+<p>Tabel lengkap dengan: foto thumbnail, lokasi GPS, jenis (masuk/pulang/progress), vendor, catatan.</p>
+<h3>Kirim Reminder ke Vendor yang Belum Lapor</h3>
+<blockquote class="callout chat"><p>👨 <em>&quot;kirim reminder ke vendor yang belum laporan&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;Konfirmasi: kirim reminder WA ke 3 vendor? (ya/tidak)&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>👨 <em>&quot;ya&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;✅ 3 reminder terkirim via WA.&quot;</em></p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch9">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 9</span>
+    <h2 class="ch-title">💰 PPK Approve Termin</h2>
+    <span class="ch-time">⏰ 13:00</span>
+  </div>
+  <p>Bu Ratna (PPK) lagi lunch di restoran. HP-nya bunyi—WA dari Karta:</p>
+<blockquote class="callout chat"><p>💰 <em>&quot;Termin baru menunggu approval: Termin 2 Drainase Margahayu, Rp 600.000.000, vendor PT Karya Maju. Syarat progres minimal 60% ✅ (sekarang 71%). Login untuk review.&quot;</em></p>
+</blockquote><h2>2 Cara Approve</h2>
+<h3>Cara A: Via Chat AI (Paling Cepat)</h3>
+<p>Login dari HP, di chat:</p>
+<blockquote class="callout chat"><p>👨 <em>&quot;approve termin 2 drainase margahayu&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;Konfirmasi approval:</em>
+<em>• Termin 2 Drainase Margahayu</em>
+<em>• Nilai: Rp 600.000.000</em>
+<em>• Vendor: PT Karya Maju Jaya</em>
+<em>• Syarat: progres 60% (terpenuhi: 71%)</em>
+<em>Setuju? (ya/tidak)&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>👨 <em>&quot;ya&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;✅ Termin 2 disetujui pada 5 Mei 2026. Notif terkirim ke Bendahara untuk pencairan.&quot;</em></p>
+</blockquote><p><strong>Total: 30 detik.</strong></p>
+<h3>Cara B: Via UI Manual</h3>
+<ol>
+<li>Buka detail Pekerjaan → tab <strong>Termin Pembayaran</strong></li>
+<li>Klik <strong>Setujui</strong> di baris termin status <code>diajukan</code></li>
+<li>Modal isi catatan PPK → submit</li>
+<li>Status berubah <code>disetujui</code> + tanggal otomatis</li>
+</ol>
+<h2>Workflow Termin Lengkap</h2>
+<pre><code>Vendor (atau Admin) bikin termin
+  ↓
+status: draft
+  ↓
+Klik &quot;Ajukan&quot; → cek syarat progres
+  ↓
+status: diajukan  ← notif WA ke PPK
+  ↓
+PPK Setujui (chat AI atau UI)
+  ↓
+status: disetujui  ← notif WA ke Bendahara
+  ↓
+Bendahara klik &quot;Bayar&quot;
+  ↓
+status: dibayar
+</code></pre>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch10">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 10</span>
+    <h2 class="ch-title">🔍 Investigasi Anomali</h2>
+    <span class="ch-time">⏰ 14:30</span>
+  </div>
+  <p>Kabid kirim WA Pak Dimas: <em>&quot;Pak, kenapa progres DED Jembatan Ciwidey jadi 45%? Kemarin masih 60%.&quot;</em></p>
+<h2>Audit Trail — Riwayat Semua Perubahan</h2>
+<p>Sidebar → <strong>Pengaturan</strong> ▶ → <strong>Audit Trail</strong>:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/12-audit-trail.png" alt="Audit Trail" /></div>
+  <div class="screen-cap">Audit Trail</div>
+</div></p>
+<p><strong>Filter:</strong></p>
+<ul>
+<li>Aksi: created / updated / deleted</li>
+<li>User: siapa yang melakukan</li>
+<li>Objek: Pekerjaan / Termin / Personil / dll</li>
+<li>Tanggal: range filter</li>
+</ul>
+<h3>Step-by-Step Investigasi</h3>
+<ol>
+<li>Filter: Objek = Pekerjaan, ID = 18, tanggal kemarin</li>
+<li>Hasil muncul: <em>&quot;5 Mei 13:42 — Pak Tono (PPTK) updated <code>progres_persen</code> dari 60.00 → 45.00. Catatan kosong.&quot;</em></li>
+</ol>
+<p>Pak Dimas WA Pak Tono → ternyata salah ketik (mau 65, ke-input 45).</p>
+<h3>Fix via Chat</h3>
+<blockquote class="callout chat"><p>👨 <em>&quot;update progres DED Jembatan Ciwidey jadi 65%&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;Konfirmasi update dari 45% ke 65%? (ya/tidak)&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>👨 <em>&quot;ya&quot;</em></p>
+</blockquote><blockquote class="callout chat"><p>🤖 <em>&quot;✅ Updated. Tercatat di Audit Trail: Pak Dimas ubah dari 45 → 65 pada 5 Mei 14:35.&quot;</em></p>
+</blockquote><p>Drama selesai dalam 3 menit, <strong>dengan jejak audit lengkap</strong>.</p>
+<blockquote class="callout tip"><p>💡 <strong>Excel tidak punya audit trail</strong> → kalau ada anomali, susah investigasi, sering jadi saling tuduh &quot;kamu yang ubah!&quot;</p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch11">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 11</span>
+    <h2 class="ch-title">🗓️ Plan Resource via Kalender</h2>
+    <span class="ch-time">⏰ 15:00</span>
+  </div>
+  <p>Pak Dimas mau plan alokasi personil untuk minggu depan. Klik tombol <strong>🗓️ Kalender</strong> di dashboard.</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/06-calendar-modal.png" alt="Calendar Modal" /></div>
+  <div class="screen-cap">Calendar Modal</div>
+</div></p>
+<p><strong>Visualisasi:</strong></p>
+<ul>
+<li>🔴 <strong>Hari Libur</strong> — tanggal di-circle merah dengan event chip (Hari Buruh, Cuti Bersama, Waisak, dll)</li>
+<li>🎯 <strong>Milestone Pekerjaan</strong> — color per bidang (BG=biru, Jalan=hijau, Drainase=ungu, Irigasi=amber)</li>
+<li>⏰ <strong>Deadline Pekerjaan</strong> — marker merah mencolok</li>
+<li>⭐ <strong>Hari Ini</strong> — highlight kuning</li>
+<li><strong>Sunday</strong> otomatis warna merah</li>
+</ul>
+<h2>Navigasi Bulan</h2>
+<p>Tombol di pojok kanan atas:</p>
+<ul>
+<li><code>‹</code> Bulan Sebelumnya</li>
+<li><code>Hari Ini</code> → loncat ke bulan ini</li>
+<li><code>›</code> Bulan Berikutnya</li>
+<li><code>×</code> Tutup</li>
+</ul>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/06b-calendar-next-month.png" alt="Calendar Next Month" /></div>
+  <div class="screen-cap">Calendar Next Month</div>
+</div></p>
+<h2>Manfaat</h2>
+<ul>
+<li>Lihat deadline padat di minggu mana</li>
+<li>Plan alokasi tambahan personil ke proyek deadline ketat</li>
+<li>Avoid scheduling launch saat libur nasional / cuti bersama</li>
+</ul>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch12">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 12</span>
+    <h2 class="ch-title">📋 Filter Kanban per Bidang</h2>
+    <span class="ch-time">⏰ 16:00</span>
+  </div>
+  <p>Mau zoom ke proyek Bidang Jalan saja. Scroll ke widget <strong>Papan Pekerjaan</strong>:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/07-kanban-full.png" alt="Kanban Full" /></div>
+  <div class="screen-cap">Kanban Full</div>
+</div></p>
+<h2>6 Kolom Workflow (Trello-Style)</h2>
+<pre><code>📋 Backlog → 🟢 Aman → 🟡 Waspada → 🔴 Kritis → ⛔ Terlambat → ✅ Selesai
+</code></pre>
+<ul>
+<li><strong>📋 Backlog</strong> — proyek belum mulai (tanggal mulai belum tercapai)</li>
+<li><strong>🟢 Aman</strong> — progres on-track, deadline aman</li>
+<li><strong>🟡 Waspada</strong> — deadline mendekati (perlu perhatian)</li>
+<li><strong>🔴 Kritis</strong> — sangat dekat deadline</li>
+<li><strong>⛔ Terlambat</strong> — sudah lewat tanggal akhir</li>
+<li><strong>✅ Selesai</strong> — proyek tuntas</li>
+</ul>
+<h2>Filter per Bidang</h2>
+<p>Bar pill di atas kanban (5 tombol):</p>
+<pre><code>🌐 Semua | Bangunan Gedung | Drainase | Irigasi | Jalan
+</code></pre>
+<p>Klik <strong>&quot;Jalan&quot;</strong> → kanban refresh, hanya nampilin proyek Bidang Jalan:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/07b-kanban-filter-jalan.png" alt="Kanban Filter Jalan" /></div>
+  <div class="screen-cap">Kanban Filter Jalan</div>
+</div></p>
+<blockquote class="callout tip"><p>💡 Filter <strong>dinamis</strong> — cuma tampilkan bidang yang punya pekerjaan tahun ini.</p>
+</blockquote><h2>Click Card → Modal Detail</h2>
+<p>Click card mana saja → modal popup detail:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/07c-kanban-card-modal.png" alt="Kanban Card Modal" /></div>
+  <div class="screen-cap">Kanban Card Modal</div>
+</div></p>
+<p><strong>Isi modal:</strong></p>
+<ul>
+<li><strong>Title</strong> + status badge (warna sesuai kolom)</li>
+<li><strong>3 stat cards:</strong> Personil · Termin · Milestone</li>
+<li><strong>Progress bar</strong> dengan persentase</li>
+<li><strong>Field grid</strong> 2 kolom: Bidang · Vendor · No SPK · No SPMK · Nilai Pagu · Nilai Kontrak · Tanggal Mulai · Tanggal Akhir · Hari Kerja · Sisa Hari</li>
+<li><strong>3 tombol:</strong> <code>Tutup</code> · <code>✏️ Edit</code> · <code>📂 Buka Detail Lengkap</code></li>
+</ul>
+<h2>Buka Detail Lengkap → 7 Tab</h2>
+<p>Klik <strong>Buka Detail Lengkap</strong> → halaman detail Pekerjaan dengan 7 tab horizontal:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/10-pekerjaan-detail.png" alt="Pekerjaan Detail" /></div>
+  <div class="screen-cap">Pekerjaan Detail</div>
+</div></p>
+<p>Tampilan full page dengan section info pekerjaan + tab navigator di bawah:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/20-pekerjaan-tabs-overview.png" alt="Pekerjaan Detail Full Page" /></div>
+  <div class="screen-cap">Pekerjaan Detail Full Page</div>
+</div></p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Isinya</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Personil</strong></td>
+<td>Daftar tenaga ahli yang assigned + jabatan + honor</td>
+</tr>
+<tr>
+<td><strong>Vendor</strong></td>
+<td>Perusahaan terkait (many-to-many)</td>
+</tr>
+<tr>
+<td><strong>Rencana Pengadaan</strong></td>
+<td>List barang yang akan dipakai</td>
+</tr>
+<tr>
+<td><strong>Realisasi Pengadaan</strong></td>
+<td>Barang yang sudah terealisasi</td>
+</tr>
+<tr>
+<td><strong>Dokumen</strong></td>
+<td>File kontrak, BAST, laporan</td>
+</tr>
+<tr>
+<td><strong>Termin Pembayaran</strong></td>
+<td>Termin + status approval</td>
+</tr>
+<tr>
+<td><strong>Milestone &amp; Jadwal</strong></td>
+<td>Milestone dengan badge sumber (kontrak / AI generated)</td>
+</tr>
+</tbody></table>
+<h3>Pekerjaan List (Akses Direct via URL)</h3>
+<p>Kalau perlu daftar semua proyek:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/09-pekerjaan-list.png" alt="Pekerjaan List" /></div>
+  <div class="screen-cap">Pekerjaan List</div>
+</div></p>
+<p>URL: <code>/admin/pekerjaans</code> (atau klik card di Kanban).</p>
+<h3>Filter Tab di Pekerjaan List</h3>
+<p>Di atas tabel ada filter tab cepat — klik untuk filter tanpa buka panel:</p>
+<table>
+<thead>
+<tr>
+<th>Filter</th>
+<th>Tampilan</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Tahun 2026</strong> — semua proyek tahun aktif</td>
+<td><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/22a-filter-tahun-2026.png" alt="Filter Tahun 2026" /></div>
+  <div class="screen-cap">Filter Tahun 2026</div>
+</div></td>
+</tr>
+<tr>
+<td><strong>Sedang Berjalan</strong> — proyek aktif</td>
+<td><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/22b-filter-sedang-berjalan.png" alt="Filter Sedang Berjalan" /></div>
+  <div class="screen-cap">Filter Sedang Berjalan</div>
+</div></td>
+</tr>
+<tr>
+<td><strong>Terlambat</strong> — yang lewat deadline</td>
+<td><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/22c-filter-terlambat.png" alt="Filter Terlambat" /></div>
+  <div class="screen-cap">Filter Terlambat</div>
+</div></td>
+</tr>
+<tr>
+<td><strong>Selesai</strong> — yang sudah closeout</td>
+<td><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/22d-filter-selesai.png" alt="Filter Selesai" /></div>
+  <div class="screen-cap">Filter Selesai</div>
+</div></td>
+</tr>
+</tbody></table>
+<h3>Form Tambah Pekerjaan Manual</h3>
+<p>Kalau tidak pakai Import Kontrak, klik <strong>Tambah Pekerjaan</strong> untuk input manual:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/21-form-tambah-pekerjaan.png" alt="Form Tambah Pekerjaan" /></div>
+  <div class="screen-cap">Form Tambah Pekerjaan</div>
+</div></p>
+<p>Form dengan field-field standar: Bidang, Jenis Pekerjaan, Vendor, No SPK/SPMK, Nilai Pagu/Kontrak, Tanggal Mulai/Akhir.</p>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch13">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 13</span>
+    <h2 class="ch-title">📤 Export Sebelum Pulang</h2>
+    <span class="ch-time">⏰ 17:00</span>
+  </div>
+  <p>Pak Dimas mau kirim laporan mingguan ke Kabid via email.</p>
+<h2>Klik Tombol &quot;📤 Export Data&quot; di Dashboard</h2>
+<p>Modal popup muncul dengan:</p>
+<p><strong>Pilih Jenis Export:</strong></p>
+<ul>
+<li>📊 Pekerjaan (Excel) — header biru, semua field lengkap</li>
+<li>📄 Pekerjaan (PDF Landscape A4) — ringkas, siap print</li>
+<li>📝 Laporan Harian (Excel) — header hijau</li>
+<li>📦 Pengadaan (Excel) — header kuning</li>
+<li>💰 Termin Pembayaran (Excel) — header ungu</li>
+</ul>
+<p><strong>Pilih Tahun Anggaran</strong> → klik <strong>Download</strong> → file ter-download.</p>
+<p>Email ke Kabid: <em>&quot;Pak, update mingguan terlampir.&quot;</em> → kirim dari mobile email.</p>
+<p><strong>Selesai. Pulang jam 5:15.</strong></p>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch14">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 14</span>
+    <h2 class="ch-title">🚪 Logout</h2>
+    <span class="ch-time">⏰ 17:15</span>
+  </div>
+  <h2>Cara #1: Tombol &quot;Keluar&quot; di AccountWidget (Paling Mudah)</h2>
+<p>Di dashboard, kotak Selamat Datang paling atas → klik tombol <strong>Keluar</strong>.</p>
+<h2>Cara #2: Avatar Pojok Kanan-Atas</h2>
+<p>Klik avatar bulat <strong>SA</strong> di pojok kanan-atas → dropdown muncul:</p>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/19-logout-menu.png" alt="Logout Menu" /></div>
+  <div class="screen-cap">Logout Menu</div>
+</div></p>
+<p>Klik <strong>Keluar</strong> (bahasa Indonesia, bukan &quot;Sign out&quot;).</p>
+<blockquote class="callout tip"><p>💡 <strong>Bahasa Indonesia:</strong> Karta full-pakai locale <code>id</code>, jadi semua label tombol/menu pakai Bahasa Indonesia.</p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch15">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 15</span>
+    <h2 class="ch-title">🌙 Karta Tetap Kerja Sendiri</h2>
+    <span class="ch-time">⏰ 21:00</span>
+  </div>
+  <p>Pak Dimas udah di rumah, lagi nonton bola sama anak. Karta tetap jalan otomatis di server:</p>
+<pre><code>21:00 → cron jalan
+       ↓
+       Kirim WA ke Bendahara:
+       &quot;1 termin baru disetujui PPK hari ini, siap pencairan:
+        Termin 2 Drainase Margahayu Rp 600.000.000&quot;
+</code></pre>
+<h2>Schedule Job Otomatis</h2>
+<table>
+<thead>
+<tr>
+<th>Jadwal</th>
+<th>Notifikasi</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Senin 07:00</strong></td>
+<td>Weekly digest ke admin_bidang + super_admin</td>
+</tr>
+<tr>
+<td>Setiap hari 07:00</td>
+<td>Notif proyek deadline H-14, H-7, H-3 ke personil</td>
+</tr>
+<tr>
+<td>Weekday 06:30</td>
+<td>Reminder vendor laporan masuk</td>
+</tr>
+<tr>
+<td>Weekday 15:00</td>
+<td>Reminder vendor laporan pulang</td>
+</tr>
+<tr>
+<td>Setiap hari 08:00</td>
+<td>Notif termin pending approval ke PPK</td>
+</tr>
+</tbody></table>
+<p>Esok pagi, Bendahara siap kerja sebelum sampai kantor.</p>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch16">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 16</span>
+    <h2 class="ch-title">📊 Recap Hari Pak Dimas</h2>
+    
+  </div>
+  <table>
+<thead>
+<tr>
+<th>Aktivitas</th>
+<th>Old Way (Excel)</th>
+<th>Karta</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cek kondisi pagi</td>
+<td>❌ Tunggu rapat 9 AM</td>
+<td>✅ WA digest 06:30</td>
+</tr>
+<tr>
+<td>Brief ke Kabid</td>
+<td>15 menit nyari file</td>
+<td>30 detik via chat</td>
+</tr>
+<tr>
+<td>Input kontrak baru</td>
+<td>25 menit input manual</td>
+<td>90 detik upload PDF</td>
+</tr>
+<tr>
+<td>Cek laporan harian</td>
+<td>Telepon 8 vendor</td>
+<td>1 chat command</td>
+</tr>
+<tr>
+<td>Reminder vendor</td>
+<td>8 WA manual</td>
+<td>1 chat command</td>
+</tr>
+<tr>
+<td>Approve termin</td>
+<td>3 menit per termin</td>
+<td>30 detik (via chat)</td>
+</tr>
+<tr>
+<td>Investigasi data</td>
+<td>Tanya tim, cek email lama</td>
+<td>Audit Trail (10 detik)</td>
+</tr>
+<tr>
+<td>Fix data salah</td>
+<td>Edit Excel, save, kirim ulang</td>
+<td>1 chat command</td>
+</tr>
+<tr>
+<td>Export laporan</td>
+<td>Bikin pivot manual</td>
+<td>1 klik download</td>
+</tr>
+<tr>
+<td><strong>Total waktu hemat</strong></td>
+<td>—</td>
+<td><strong>~3-4 jam/hari</strong></td>
+</tr>
+</tbody></table>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch17">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 17</span>
+    <h2 class="ch-title">📌 Lampiran: Sidebar Cheat Sheet</h2>
+    
+  </div>
+  <p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/08-sidebar-collapsed.png" alt="Sidebar Collapsed" /></div>
+  <div class="screen-cap">Sidebar Collapsed</div>
+</div></p>
+<h2>Default View (Collapsed)</h2>
+<pre><code>📊 Dasbor                 ← landing page (90% kerjaan di sini)
+📝 Laporan Harian         ← lihat semua laporan vendor
+📚 Master Data ▶          (klik untuk expand — collapsed default)
+⚙️  Pengaturan ▶          (klik untuk expand — collapsed default)
+</code></pre>
+<h2>Setelah Expand</h2>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/08b-sidebar-expanded.png" alt="Sidebar Expanded" /></div>
+  <div class="screen-cap">Sidebar Expanded</div>
+</div></p>
+<pre><code>📊 Dasbor
+📝 Laporan Harian
+📚 Master Data ▼ (expanded)
+   🏢 Bidang
+   📦 Jenis Pekerjaan
+   🏗️  Perusahaan
+   🚦 Status Pekerjaan
+   👷 Tenaga Ahli
+   🗓️  Hari Libur
+⚙️  Pengaturan ▼ (expanded)
+   👥 Pengguna
+   ⚙️  Pengaturan Sistem
+   📜 Audit Trail
+</code></pre>
+<h2>Master Data Pages</h2>
+<h3>🏢 Bidang</h3>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/23-master-bidang.png" alt="Master Bidang" /></div>
+  <div class="screen-cap">Master Bidang</div>
+</div></p>
+<p>Daftar bidang/divisi (Jalan, Drainase, Jembatan, dst). Tiap pekerjaan harus dipasangkan ke 1 bidang.</p>
+<h3>🏢 Perusahaan</h3>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/15-master-perusahaan.png" alt="Master Perusahaan" /></div>
+  <div class="screen-cap">Master Perusahaan</div>
+</div></p>
+<p>CRUD daftar vendor/kontraktor (PT, CV, Perorangan, Lainnya).</p>
+<h3>👷 Tenaga Ahli</h3>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/16-master-tenaga-ahli.png" alt="Master Tenaga Ahli" /></div>
+  <div class="screen-cap">Master Tenaga Ahli</div>
+</div></p>
+<p>Pool personil yang bisa di-assign ke pekerjaan. Profile berisi nama, NIK, jabatan keahlian, kontak.</p>
+<h2>Pengguna (User Management)</h2>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/14-pengguna-list.png" alt="User Management" /></div>
+  <div class="screen-cap">User Management</div>
+</div></p>
+<p>CRUD user, assign role:</p>
+<ul>
+<li><code>super_admin</code> — akses semua</li>
+<li><code>admin_bidang</code> — admin per bidang</li>
+<li><code>pptk</code> — input progres, kelola personil</li>
+<li><code>ppk</code> — approve termin pembayaran</li>
+<li><code>viewer</code> — read-only</li>
+<li><code>vendor</code> — login portal vendor</li>
+</ul>
+<h2>System Settings</h2>
+<p><div class="screen">
+  <div class="screen-titlebar">
+    <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+    <span class="url">karta.aureonforge.com</span>
+  </div>
+  <div class="screen-body"><img src="file:///D:/Downloads/coding project/project_management/dputr-pm/docs/screenshots/24-system-settings-full.png" alt="System Settings" /></div>
+  <div class="screen-cap">System Settings</div>
+</div></p>
+<p>Setting global aplikasi (super_admin only):</p>
+<ul>
+<li><strong>Informasi Instansi</strong> — nama, alamat, telepon</li>
+<li><strong>Tahun Anggaran Aktif</strong></li>
+<li><strong>Notifikasi WA</strong> — toggle aktif/non untuk: deadline, weekly digest, reminder, termin pending</li>
+<li><strong>Jam Operasional Vendor</strong> — buka/tutup masuk &amp; pulang</li>
+</ul>
+<h2>Halaman yang TIDAK Ada di Sidebar (Akses Lain)</h2>
+<p>Sengaja disembunyikan biar sidebar gak ramai:</p>
+<table>
+<thead>
+<tr>
+<th>Halaman</th>
+<th>Cara Akses</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>💼 Daftar Pekerjaan</td>
+<td>Klik card di Kanban → modal → &quot;Buka Detail&quot;</td>
+</tr>
+<tr>
+<td>💰 Termin Pembayaran</td>
+<td>Detail Pekerjaan → tab &quot;Termin Pembayaran&quot;</td>
+</tr>
+<tr>
+<td>📁 Dokumen</td>
+<td>Detail Pekerjaan → tab &quot;Dokumen&quot;</td>
+</tr>
+<tr>
+<td>📦 Rencana Pengadaan</td>
+<td>Detail Pekerjaan → tab &quot;Rencana Pengadaan&quot;</td>
+</tr>
+<tr>
+<td>✅ Realisasi Pengadaan</td>
+<td>Detail Pekerjaan → tab &quot;Realisasi Pengadaan&quot;</td>
+</tr>
+<tr>
+<td>🎯 Milestone</td>
+<td>Detail Pekerjaan → tab &quot;Milestone &amp; Jadwal&quot;</td>
+</tr>
+<tr>
+<td>📥 Import Data</td>
+<td>Tombol &quot;📑 Import Kontrak&quot; di Dashboard</td>
+</tr>
+<tr>
+<td>📤 Export Data</td>
+<td>Tombol &quot;📤 Export Data&quot; di Dashboard</td>
+</tr>
+</tbody></table>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch18">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 18</span>
+    <h2 class="ch-title">🆘 Troubleshooting</h2>
+    
+  </div>
+  <table>
+<thead>
+<tr>
+<th>Gejala</th>
+<th>Solusi</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Chat AI balas <em>&quot;OPENAI_API_KEY belum dikonfigurasi&quot;</em></td>
+<td>Admin: isi <code>OPENAI_API_KEY</code> di <code>.env</code>, restart server</td>
+</tr>
+<tr>
+<td>Import Kontrak gagal <em>&quot;tidak dapat dibaca&quot;</em></td>
+<td>PDF hasil scan → harus PDF digital (Word export)</td>
+</tr>
+<tr>
+<td>Vendor login error</td>
+<td>Cek user role = <code>vendor</code> &amp; link ke perusahaan</td>
+</tr>
+<tr>
+<td>Notif WA gak ngirim</td>
+<td>Cek <code>WA_GATEWAY_TOKEN</code> &amp; <code>no_telp</code> di profile user</td>
+</tr>
+<tr>
+<td>Halaman 500 error</td>
+<td>Admin: cek <code>storage/logs/laravel-*.log</code></td>
+</tr>
+<tr>
+<td>Lupa cara</td>
+<td><strong>Tanya AI</strong> — itulah gunanya chat hero</td>
+</tr>
+<tr>
+<td>Logout gak nemu</td>
+<td>Avatar <strong>SA</strong> pojok kanan-atas → <strong>Keluar</strong></td>
+</tr>
+<tr>
+<td>Modal kalender stuck open</td>
+<td>Tekan <strong>ESC</strong> atau klik <code>×</code></td>
+</tr>
+<tr>
+<td>Filter kanban gak refresh</td>
+<td>Hard reload browser (Ctrl+Shift+R)</td>
+</tr>
+</tbody></table>
+<hr>
+
+</section>
+
+<section class="chapter" id="ch19">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 19</span>
+    <h2 class="ch-title">💡 Filosofi Karta</h2>
+    
+  </div>
+  <blockquote class="callout story"><p><strong>Daripada belajar tool baru, suruh aja tool-nya kerjain.</strong>
+Daripada input data manual, upload aja dokumen yang udah ada.
+Daripada kirim email yang gak dibuka, kirim WA yang langsung dibaca.
+Daripada vendor pakai akun guest yang clunky, kasih portal sendiri.
+Daripada ngeset semua dari nol, pilih template industri yang udah kebayang.</p>
+<p><strong>= Karta.</strong></p>
+</blockquote><hr>
+
+</section>
+
+<section class="chapter" id="ch20">
+  <div class="chapter-header">
+    <span class="ch-num">BAB 20</span>
+    <h2 class="ch-title">🎓 Quick Wins untuk User Baru</h2>
+    
+  </div>
+  <h2>Latihan 5 Menit Pertama</h2>
+<p>Login → langsung ketik di chat hero:</p>
+<ol>
+<li><em>&quot;berapa total proyek?&quot;</em> — lihat angka real</li>
+<li><em>&quot;daftar proyek aktif&quot;</em> — list muncul</li>
+<li><em>&quot;detail proyek nomor 1&quot;</em> — detail real</li>
+<li><em>&quot;milestone proyek nomor 1&quot;</em> — milestone list</li>
+<li><em>&quot;laporan harian hari ini&quot;</em></li>
+<li><em>&quot;update progres proyek nomor 1 jadi 50%&quot;</em> → ketik <em>&quot;ya&quot;</em></li>
+</ol>
+<p>Kalau 6 ini jalan, kamu sudah pakai 80% kekuatan Karta.</p>
+<h2>Onboarding Admin Baru (10 Menit)</h2>
+<ol>
+<li>✅ Login → ganti password admin (avatar → Edit Profile)</li>
+<li>✅ <strong>Pengaturan → Pengaturan Sistem</strong> — set nama instansi, tahun anggaran, jam operasional</li>
+<li>✅ <strong>Master Data → Bidang</strong> — tambah/edit sesuai kebutuhan</li>
+<li>✅ <strong>Master Data → Perusahaan</strong> — tambah vendor utama</li>
+<li>✅ <strong>Pengguna</strong> — tambah staff lain (admin_bidang, pptk, ppk, viewer)</li>
+<li>✅ Buat 1 vendor user → kasih credential ke vendor → minta mereka coba laporan harian</li>
+</ol>
+<h2>Onboarding Vendor (3 Menit)</h2>
+<ol>
+<li>✅ Buka <a href="https://karta.aureonforge.com/vendor">https://karta.aureonforge.com/vendor</a> di HP</li>
+<li>✅ Login pakai credential dari admin</li>
+<li>✅ Submit Laporan Harian pertama (foto + catatan + GPS)</li>
+<li>✅ Banner &quot;Install di home screen&quot; → klik <strong>Install</strong> (PWA)</li>
+<li>✅ Buka dari home screen tiap hari</li>
+</ol>
+<hr>
+<p><strong>Hari kerja yang baik = pulang tepat waktu dengan semua urusan beres.</strong></p>
+<p>Karta bikin itu jadi default, bukan kebetulan.</p>
+<p>🎉 <strong>Selamat menggunakan Karta!</strong></p>
+<hr>
+<p>📞 <strong>Bantuan lebih lanjut:</strong></p>
+<ul>
+<li>In-app: tanya AI Chat — <em>&quot;gimana cara X?&quot;</em></li>
+<li>Dokumentasi: <a href="./USER_GUIDE.md">USER_GUIDE.md</a></li>
+<li>Setup teknis: <a href="../DEPLOY.md">DEPLOY.md</a></li>
+<li>Roadmap masa depan: <a href="./KARSA_DEVELOPMENT_PLAN.md">KARSA_DEVELOPMENT_PLAN.md</a></li>
+</ul>
+
+</section>
+
+</div>
+</body>
+</html>
