@@ -1,34 +1,4 @@
-# 📘 Karta Guidebook
-## Sehari Bersama Karta — Project Management Tool
-
-> **Tutorial format cerita:** ikuti satu hari kerja Pak Dimas (Admin Bidang Jalan), Bu Sari (Vendor), dan Bu Ratna (PPK) — kamu akan paham 90% fitur Karta tanpa perlu hafal menu.
-
-**🔗 Akses Production:** https://karta.aureonforge.com
-**📧 Login default:** `admin@dputr.go.id` / `password` *(ganti segera setelah login pertama!)*
-
----
-
-## 📚 Daftar Isi
-
-1. [🌅 06:30 — Bangun, Cek WA Digest](#-0630--bangun-cek-wa-digest)
-2. [🏢 07:45 — Sampai Kantor, Login](#-0745--sampai-kantor-login)
-3. [💬 08:00 — Tanya AI Apa Saja](#-0800--tanya-ai-apa-saja)
-4. [🎯 08:30 — Brief Mendadak ke Kabid](#-0830--brief-mendadak-ke-kabid)
-5. [📑 09:00 — Vendor Kirim PDF Kontrak](#-0900--vendor-kirim-pdf-kontrak)
-6. [📷 10:15 — Vendor di Lapangan](#-1015--vendor-di-lapangan)
-7. [📊 11:00 — Cek Laporan Harian](#-1100--cek-laporan-harian)
-8. [💰 13:00 — PPK Approve Termin](#-1300--ppk-approve-termin)
-9. [🔍 14:30 — Investigasi Anomali](#-1430--investigasi-anomali)
-10. [🗓️ 15:00 — Plan Resource via Kalender](#-1500--plan-resource-via-kalender)
-11. [📋 16:00 — Filter Kanban per Bidang](#-1600--filter-kanban-per-bidang)
-12. [📤 17:00 — Export Sebelum Pulang](#-1700--export-sebelum-pulang)
-13. [🚪 17:15 — Logout](#-1715--logout)
-14. [📌 Lampiran: Sidebar Cheat Sheet](#-lampiran-sidebar-cheat-sheet)
-15. [🆘 Troubleshooting](#-troubleshooting)
-
----
-
-# 🌅 06:30 — Bangun, Cek WA Digest
+# 🌅 06:30 — Bangun, Cek WA Digest (WhatsApp Digest Mingguan)
 
 Alarm bunyi jam 6 pagi. Pak Dimas masih di kasur. Belum sempat duduk, HP sudah berdering — bukan telepon, tapi notifikasi WhatsApp dari **Karta Bot**:
 
@@ -61,35 +31,35 @@ Pak Dimas baca sambil masih tiduran. Sudah tau prioritas hari ini sebelum mandi.
 
 ---
 
-# 🏢 07:45 — Sampai Kantor, Login
+# 🏢 07:45 — Sampai Kantor, Login (Login & Dashboard)
 
 ## Login Page
 
-Pak Dimas buka https://karta.aureonforge.com → otomatis redirect ke `/admin/login`.
+Pak Dimas buka https://karta.aureonforge.com → otomatis redirect ke `/admin/login`. Form sederhana: dua field (Alamat email, Kata sandi), checkbox "Ingat saya", tombol oranye **Masuk**.
 
-![Login Page](./screenshots/01-login-page.png)
+![Login Page — form Karta dengan dua field email/kata sandi dan tombol Masuk berwarna oranye](./screenshots/01-login-page.png)
 
-Masukkan email + password → klik Sign in.
+Isi credential → klik **Masuk** → langsung redirect ke dashboard.
 
-> ⚠️ **Wajib ganti password setelah login pertama** — production live di internet, jangan biarkan default.
+> ⚠️ **Wajib ganti password setelah login pertama** — production live di internet, jangan biarkan default. Hubungi sysadmin untuk credential awal.
 
 ## Dashboard — Landing Page
 
-Setelah login, dashboard langsung tampil dengan layout 5 area:
+Setelah login, dashboard ("Dasbor") langsung tampil. Bagian atas terdiri dari **5 area** yang ke-stack vertikal:
 
-![Dashboard Top](./screenshots/02b-dashboard-top.png)
+![Dashboard Top — AccountWidget, 3 Action Buttons (Import Kontrak / Export Data / Kalender), Chat Hero dengan status report, Quick Suggestions, dan Input Box](./screenshots/02b-dashboard-top.png)
 
 **Dari atas ke bawah:**
 
-1. **AccountWidget** — sapaan + tombol **Keluar** (logout dari sini)
-2. **3 Action Buttons** — `📑 Import Kontrak` · `📤 Export Data` · `🗓️ Kalender`
-3. **AI Chat Hero** — full width, langsung ada greeting + status report otomatis
-4. **Quick Suggestion Buttons** — 4 pertanyaan cepat
-5. **Input Box Chat** — ketik bebas
+1. **AccountWidget** — sapaan "Selamat Datang" + nama user + tombol **Keluar** (logout shortcut)
+2. **3 Action Buttons** — `📑 Import Kontrak` · `📤 Export Data` · `🗓️ Kalender` (dibahas di Bab 5, 12, 10)
+3. **AI Chat Hero** — full width, banner oranye "Apa yang bisa saya bantu hari ini?" + bubble status report otomatis
+4. **Quick Suggestion Buttons** — 4 pertanyaan cepat (chip abu-abu di atas input)
+5. **Input Box Chat** — placeholder "Ketik pertanyaan atau perintah…" + tombol Send oranye
 
 ### Status Report Otomatis (di Chat Hero)
 
-Di dalam chat hero, ada **bubble kedua** yang otomatis muncul tiap kali buka dashboard:
+Di dalam chat hero, ada **bubble assistant pertama** yang otomatis muncul tiap kali buka dashboard. Isinya snapshot real-time dari proyek hari ini:
 
 ```
 📊 Status Hari Ini · Senin, 5 Mei 2026
@@ -110,18 +80,36 @@ Total: 72 • Aktif: 59 • Selesai: 13
 • 0 laporan harian masuk
 ```
 
-### Full Dashboard
+> 💡 Angka di atas adalah contoh; widget refresh otomatis tiap kali dashboard di-load. Detailnya ada di `app/Livewire/AiChatHero.php`.
 
-Scroll ke bawah, masih ada widget tambahan:
-- **Papan Pekerjaan Kanban** (Trello-style)
-- **4 Stats** (Proyek Aktif, Total Nilai, Laporan Pending, Termin Menunggu)
-- **6 Traffic Light** (distribusi status semua proyek)
-- **Bar Chart** distribusi progres
-- **Tabel Laporan Vendor Hari Ini**
+### Full Dashboard (scroll ke bawah)
+
+Setelah area atas, scroll terus untuk lihat 5 widget tambahan:
+
+![Dashboard Full — scroll ke bawah menampilkan Papan Kanban 4 kolom, 4 Stats, 6 Traffic Light, Bar Chart distribusi, dan Tabel Laporan Vendor](./screenshots/02-dashboard-fullpage.png)
+
+- **Papan Pekerjaan Kanban** — 4 kolom (📋 Backlog · 🟢 Aman · 🟡 Waspada · 🔴 Kritis), card pekerjaan bisa diklik (lihat Bab 11)
+- **4 Stats Cards** — Proyek Aktif, Total Nilai Kontrak, Laporan Pending, Termin Menunggu Persetujuan
+- **6 Traffic Light Cards** — Aman, Waspada, Kritis, Terlambat, Selesai, Belum Mulai (distribusi status semua proyek)
+- **Bar Chart** — distribusi progres pekerjaan per range (0-25%, 26-50%, 51-75%, 76-100%)
+- **Tabel Laporan Vendor Hari Ini** — daftar laporan harian yang masuk hari itu
+
+### After-Click: Avatar Dropdown (Pojok Kanan Atas)
+
+Klik bulat hitam **SA** (avatar Super Admin) di topbar → dropdown muncul di bawahnya:
+
+![Avatar SA Dropdown — menu dengan nama user, 3 tombol theme (Light/Dark/System), dan Keluar](./screenshots/19-logout-menu.png)
+
+3 area di dropdown:
+- **Nama user** (Super Admin)
+- **Theme switcher** — 3 ikon: ☀️ Light · 🌙 Dark · 🖥️ System (auto-follow OS)
+- **🚪 Keluar** — logout (dibahas tuntas di Bab 13)
+
+> ✨ Theme switcher reactive — klik ikon, seluruh UI langsung ganti warna tanpa reload.
 
 ---
 
-# 💬 08:00 — Tanya AI Apa Saja
+# 💬 08:00 — Tanya AI Apa Saja (AI Chat Hero)
 
 Pak Dimas sambil sruput kopi, ketik di chat hero:
 
@@ -181,7 +169,7 @@ Fungsinya sama persis dengan chat hero di dashboard — bisa pakai dari halaman 
 
 ---
 
-# 🎯 08:30 — Brief Mendadak ke Kabid
+# 🎯 08:30 — Brief Mendadak ke Kabid (AI Quick Lookup)
 
 Pak Dimas baru duduk, langsung ditembak Kabid:
 
@@ -203,7 +191,7 @@ Kabid manggut puas, lanjut topik lain.
 
 ---
 
-# 📑 09:00 — Vendor Kirim PDF Kontrak
+# 📑 09:00 — Vendor Kirim PDF Kontrak (Import Kontrak PDF)
 
 Email masuk dari kontraktor baru — *PT Sinar Konstruksi* — kirim PDF kontrak proyek "Pembangunan Jembatan Pasirjambu", 8 halaman penuh angka.
 
@@ -258,7 +246,7 @@ Notifikasi terakhir:
 
 ---
 
-# 📷 10:15 — Vendor di Lapangan
+# 📷 10:15 — Vendor di Lapangan (Vendor Portal & PWA)
 
 Bu Sari (vendor PT Karya Maju) lagi ngawasin tukang cor lapis bawah di lokasi proyek Drainase Margahayu. Pekerjaan kelar jam 10 pagi, perlu lapor.
 
@@ -302,7 +290,7 @@ Klik menu **Submit Laporan Harian:**
 
 ---
 
-# 📊 11:00 — Cek Laporan Harian
+# 📊 11:00 — Cek Laporan Harian (Laporan Harian Vendor)
 
 Pak Dimas balik ke laptop. Tanya AI:
 
@@ -330,7 +318,7 @@ Tabel lengkap dengan: foto thumbnail, lokasi GPS, jenis (masuk/pulang/progress),
 
 ---
 
-# 💰 13:00 — PPK Approve Termin
+# 💰 13:00 — PPK Approve Termin (Approval Termin)
 
 Bu Ratna (PPK) lagi lunch di restoran. HP-nya bunyi—WA dari Karta:
 
@@ -386,7 +374,7 @@ status: dibayar
 
 ---
 
-# 🔍 14:30 — Investigasi Anomali
+# 🔍 14:30 — Investigasi Anomali (Audit Trail)
 
 Kabid kirim WA Pak Dimas: *"Pak, kenapa progres DED Jembatan Ciwidey jadi 45%? Kemarin masih 60%."*
 
@@ -425,7 +413,7 @@ Drama selesai dalam 3 menit, **dengan jejak audit lengkap**.
 
 ---
 
-# 🗓️ 15:00 — Plan Resource via Kalender
+# 🗓️ 15:00 — Plan Resource via Kalender (Kalender Resource)
 
 Pak Dimas mau plan alokasi personil untuk minggu depan. Klik tombol **🗓️ Kalender** di dashboard.
 
@@ -456,7 +444,7 @@ Tombol di pojok kanan atas:
 
 ---
 
-# 📋 16:00 — Filter Kanban per Bidang
+# 📋 16:00 — Filter Kanban per Bidang (Kanban Board & Filter)
 
 Mau zoom ke proyek Bidang Jalan saja. Scroll ke widget **Papan Pekerjaan**:
 
@@ -551,7 +539,7 @@ Form dengan field-field standar: Bidang, Jenis Pekerjaan, Vendor, No SPK/SPMK, N
 
 ---
 
-# 📤 17:00 — Export Sebelum Pulang
+# 📤 17:00 — Export Sebelum Pulang (Export Excel/PDF)
 
 Pak Dimas mau kirim laporan mingguan ke Kabid via email.
 
@@ -574,7 +562,7 @@ Email ke Kabid: *"Pak, update mingguan terlampir."* → kirim dari mobile email.
 
 ---
 
-# 🚪 17:15 — Logout
+# 🚪 17:15 — Logout (Sign Out)
 
 ## Cara #1: Tombol "Keluar" di AccountWidget (Paling Mudah)
 
@@ -592,7 +580,7 @@ Klik **Keluar** (bahasa Indonesia, bukan "Sign out").
 
 ---
 
-# 🌙 21:00 — Karta Tetap Kerja Sendiri
+# 🌙 21:00 — Karta Tetap Kerja Sendiri (Cron & Background Jobs)
 
 Pak Dimas udah di rumah, lagi nonton bola sama anak. Karta tetap jalan otomatis di server:
 
@@ -618,7 +606,7 @@ Esok pagi, Bendahara siap kerja sebelum sampai kantor.
 
 ---
 
-# 📊 Recap Hari Pak Dimas
+# 📊 Recap Hari Pak Dimas (Ringkasan Workflow)
 
 | Aktivitas | Old Way (Excel) | Karta |
 |---|---|---|
@@ -635,7 +623,7 @@ Esok pagi, Bendahara siap kerja sebelum sampai kantor.
 
 ---
 
-# 📌 Lampiran: Sidebar Cheat Sheet
+# 📌 Lampiran: Sidebar Cheat Sheet (Navigasi Menu)
 
 ![Sidebar Collapsed](./screenshots/08-sidebar-collapsed.png)
 
@@ -727,7 +715,7 @@ Sengaja disembunyikan biar sidebar gak ramai:
 
 ---
 
-# 🆘 Troubleshooting
+# 🆘 Troubleshooting (Diagnostik & Solusi)
 
 | Gejala | Solusi |
 |---|---|
@@ -743,7 +731,7 @@ Sengaja disembunyikan biar sidebar gak ramai:
 
 ---
 
-# 💡 Filosofi Karta
+# 💡 Filosofi Karta (Design Principles)
 
 > **Daripada belajar tool baru, suruh aja tool-nya kerjain.**
 > Daripada input data manual, upload aja dokumen yang udah ada.
@@ -755,7 +743,7 @@ Sengaja disembunyikan biar sidebar gak ramai:
 
 ---
 
-# 🎓 Quick Wins untuk User Baru
+# 🎓 Quick Wins untuk User Baru (Onboarding 3 Hari)
 
 ## Latihan 5 Menit Pertama
 

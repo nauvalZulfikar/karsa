@@ -260,6 +260,64 @@ class AiChatService
                     ],
                 ],
             ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'parse_kak_pdf',
+                    'description' => 'Baca PDF Kerangka Acuan Kerja (KAK). Ekstrak nama pekerjaan, lokasi, pagu, jadwal. Pakai untuk auto-fill saat bikin proyek baru.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'file_path' => ['type' => 'string', 'description' => 'Path absolut file PDF KAK di storage atau filesystem'],
+                        ],
+                        'required' => ['file_path'],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'parse_kontrak_pdf',
+                    'description' => 'Baca PDF Kontrak (SPK/SPMK/BAST). Ekstrak no kontrak, tanggal, nilai, vendor, termin pembayaran, milestone via AI. Lebih akurat dari parse_kak_pdf.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'file_path' => ['type' => 'string', 'description' => 'Path file PDF kontrak'],
+                        ],
+                        'required' => ['file_path'],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'parse_rab_pdf',
+                    'description' => 'Baca PDF/XLSX RAB / Lampiran Negosiasi. Ekstrak line items (personil, non-personil) dengan harga negosiasi via AI. Pakai untuk generate invoice yang akurat.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'file_path' => ['type' => 'string', 'description' => 'Path file PDF atau XLSX RAB'],
+                        ],
+                        'required' => ['file_path'],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'generate_invoice',
+                    'description' => 'Generate invoice PDF untuk proyek tertentu. Pakai data personil + rencana pengadaan yang sudah ada di sistem. Return download URL. KONFIRMASI ke user dulu.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'pekerjaan_id'    => ['type' => 'integer', 'description' => 'ID pekerjaan yang mau di-invoice'],
+                            'prestasi_persen' => ['type' => 'integer', 'description' => 'Persentase prestasi (default 100)'],
+                            'no_invoice'      => ['type' => 'integer', 'description' => 'Nomor invoice (default = pekerjaan_id)'],
+                        ],
+                        'required' => ['pekerjaan_id'],
+                    ],
+                ],
+            ],
         ];
     }
 
@@ -276,8 +334,79 @@ class AiChatService
             'update_progres_pekerjaan' => $this->toolUpdateProgres($input),
             'tandai_milestone_selesai' => $this->toolMilestoneSelesai($input),
             'approve_termin'           => $this->toolApproveTermin($input),
+            'parse_kak_pdf'            => $this->toolParseKak($input),
+            'parse_kontrak_pdf'        => $this->toolParseKontrak($input),
+            'parse_rab_pdf'            => $this->toolParseRab($input),
+            'generate_invoice'         => $this->toolGenerateInvoice($input),
             default                    => ['error' => "Tool '{$name}' tidak dikenali"],
         };
+    }
+
+    private function toolParseKak(array $input): array
+    {
+        $path = $this->resolveFilePath($input['file_path'] ?? '');
+        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        try {
+            $parser = app(\App\Services\KickoffParserService::class);
+            return ['ok' => true, 'data' => $parser->parse($path)];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function toolParseKontrak(array $input): array
+    {
+        $path = $this->resolveFilePath($input['file_path'] ?? '');
+        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        try {
+            $parser = app(\App\Services\KontrakParserService::class);
+            return ['ok' => true, 'data' => $parser->parse($path)];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function toolParseRab(array $input): array
+    {
+        $path = $this->resolveFilePath($input['file_path'] ?? '');
+        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        try {
+            $parser = app(\App\Services\RabParserService::class);
+            return ['ok' => true, 'data' => $parser->parse($path)];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function toolGenerateInvoice(array $input): array
+    {
+        $pid = (int) ($input['pekerjaan_id'] ?? 0);
+        if (!$pid) return ['error' => 'pekerjaan_id wajib'];
+        try {
+            $gen = app(\App\Services\DocumentGeneratorService::class);
+            $result = $gen->generateInvoice(
+                $pid,
+                isset($input['prestasi_persen']) ? (int) $input['prestasi_persen'] : null,
+                isset($input['no_invoice']) ? (int) $input['no_invoice'] : null,
+            );
+            return ['ok' => true, 'result' => $result];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function resolveFilePath(string $raw): ?string
+    {
+        if (empty($raw)) return null;
+        // Absolute path
+        if (file_exists($raw)) return $raw;
+        // Relative to storage/app
+        $candidate = storage_path('app/' . ltrim($raw, '/'));
+        if (file_exists($candidate)) return $candidate;
+        // Public storage
+        $candidate2 = storage_path('app/public/' . ltrim($raw, '/'));
+        if (file_exists($candidate2)) return $candidate2;
+        return null;
     }
 
     private function toolDashboardStats(): array
