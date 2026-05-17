@@ -27,7 +27,7 @@
 
 ### Sprint 1 — Foundation (Sprint Goal: Tools dasar CRUD + workflow)
 
-- [~] **F1.1** · claimed 2026-05-17 08:51 Consolidate roles 6→4 (Superadmin, Admin, Vendor, Staff)
+- [x] **F1.1** · done 2026-05-17 08:51
   - Action: rename `admin_bidang` → `admin`, hapus `pptk`/`ppk`/`viewer` atau merge ke roles 4
   - Update: middleware, gates, seeders, blueprint
   - Est: 2-3h · Depends: none
