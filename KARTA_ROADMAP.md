@@ -27,7 +27,9 @@
 
 ### Sprint 1 — Foundation (Sprint Goal: Tools dasar CRUD + workflow)
 
-- [x] **F1.1** · done 2026-05-17 08:39 · 
+- [!] **F1.1** · blocked 2026-05-17 08:39 · Pushing to origin
+fatal: 'origin' does not appear to be a git repository
+fatal: 
   - Action: rename `admin_bidang` → `admin`, hapus `pptk`/`ppk`/`viewer` atau merge ke roles 4
   - Update: middleware, gates, seeders, blueprint
   - Est: 2-3h · Depends: none
