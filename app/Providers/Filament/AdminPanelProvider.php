@@ -50,7 +50,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->brandName('DPUTR Project Management')
+            ->brandName('SHAKA AI')
             ->login()
             ->authGuard('web')
             ->colors([
