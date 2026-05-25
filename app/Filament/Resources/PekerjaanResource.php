@@ -382,6 +382,8 @@ class PekerjaanResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ForceDeleteAction::make()
+                    ->label('Hapus Permanen'),
                 Tables\Actions\RestoreAction::make(),
             ])
             ->bulkActions([
@@ -401,7 +403,6 @@ class PekerjaanResource extends Resource
             \App\Filament\Resources\PekerjaanResource\RelationManagers\RealisasiPengadaanRelationManager::class,
             \App\Filament\Resources\PekerjaanResource\RelationManagers\DokumenRelationManager::class,
             \App\Filament\Resources\PekerjaanResource\RelationManagers\TerminPembayaranRelationManager::class,
-            \App\Filament\Resources\PekerjaanResource\RelationManagers\MilestoneRelationManager::class,
         ];
     }
 

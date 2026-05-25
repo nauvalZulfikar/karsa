@@ -37,15 +37,38 @@ class RabParserService
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
         if ($ext === 'pdf') {
+            $cached = \App\Models\ChatUpload::where('abs_path', $filePath)->first();
+            if ($cached && mb_strlen((string) $cached->ocr_text) >= 200) {
+                return mb_substr(preg_replace('/\s+/', ' ', $cached->ocr_text), 0, 14000);
+            }
+
             try {
                 $parser = new Parser();
                 $pdf = $parser->parseFile($filePath);
-                $text = $pdf->getText();
-                $text = preg_replace('/\s+/', ' ', $text);
-                return mb_substr($text, 0, 14000);
+                $text = trim($pdf->getText());
             } catch (\Throwable $e) {
-                throw new \RuntimeException('Gagal membaca PDF RAB: ' . $e->getMessage());
+                $text = '';
             }
+
+            if (mb_strlen($text) < 200) {
+                try {
+                    $ocrText = trim(app(PdfOcrService::class)->ocr($filePath, 6));
+                    if (mb_strlen($ocrText) >= 200) {
+                        $text = $ocrText;
+                        \App\Models\ChatUpload::where('abs_path', $filePath)->update([
+                            'is_scanned_pdf' => true,
+                            'ocr_text' => mb_substr($ocrText, 0, 15000),
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    if (mb_strlen($text) < 50) {
+                        throw new \RuntimeException('PDF RAB tidak terbaca + OCR fallback gagal: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            $text = preg_replace('/\s+/', ' ', $text);
+            return mb_substr($text, 0, 14000);
         }
 
         if (in_array($ext, ['xlsx', 'xls'])) {
@@ -118,6 +141,8 @@ class RabParserService
         PROMPT;
 
         $response = Http::timeout(120)
+            ->connectTimeout(30)
+            ->retry(2, 2000)
             ->withToken($this->apiKey)
             ->post($this->apiUrl, [
                 'model'           => 'gpt-4o-mini',

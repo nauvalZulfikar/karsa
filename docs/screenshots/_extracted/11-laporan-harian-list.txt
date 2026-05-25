@@ -1,0 +1,30 @@
+URL: http://localhost:8010/admin/laporan-harians
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Laporan Harian
+Daftar
+Laporan Harian
+Cari
+Filter
+1
+Filter aktif
+Hari Ini
+Hapus filter
+Tidak ada data yang ditemukan
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

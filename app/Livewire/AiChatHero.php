@@ -13,21 +13,42 @@ class AiChatHero extends AiChatWidget
 
     public function mount(): void
     {
+        parent::mount();
+
         if (empty($this->messages)) {
-            $name = auth()->user()?->name ?? 'Pak';
-
-            // 1. Welcome message
-            $this->messages[] = [
-                'role'    => 'assistant',
-                'content' => "Halo {$name}! Saya asisten AI DPUTR. Coba: \"berapa proyek kritis hari ini?\" atau \"update progres jalan soreang jadi 75%\".",
-            ];
-
-            // 2. Auto status report
-            $this->messages[] = [
-                'role'    => 'assistant',
-                'content' => $this->generateStatusReport(),
-            ];
+            $this->addWelcomeMessages();
+            $this->saveSession();
         }
+    }
+
+    public function newChat(): void
+    {
+        $this->sessionId = null;
+        $this->messages = [];
+        $this->aiMessages = [];
+        $this->input = '';
+        $this->pendingAiBody = '';
+        $this->attachments = [];
+        $this->showHistory = false;
+
+        $this->addWelcomeMessages();
+        $this->saveSession();
+        $this->redirect(request()->header('Referer', '/admin'));
+    }
+
+    private function addWelcomeMessages(): void
+    {
+        $name = auth()->user()?->name ?? 'Pak';
+
+        $this->messages[] = [
+            'role'    => 'assistant',
+            'content' => "Halo {$name}! Saya asisten AI DPUTR. Coba: \"berapa proyek kritis hari ini?\" atau \"update progres jalan soreang jadi 75%\".",
+        ];
+
+        $this->messages[] = [
+            'role'    => 'assistant',
+            'content' => $this->generateStatusReport(),
+        ];
     }
 
     private function generateStatusReport(): string

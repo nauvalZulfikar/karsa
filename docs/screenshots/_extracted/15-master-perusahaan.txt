@@ -1,0 +1,92 @@
+URL: http://localhost:8010/admin/master/perusahaans
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Perusahaan
+Daftar
+Perusahaan
+Buat Perusahaan
+Cari
+Filter
+0
+Nama
+Singkatan
+Jenis
+PIC
+Telp PIC
+Status
+PT. ITERGO BUANA UTAMA
+PT
+Aktif
+Ubah
+Hapus
+PT. PURNA WAHANA LESTARI KONSULTAN
+PT
+Aktif
+Ubah
+Hapus
+CV. TACIBA SHIGOTO NUSANTARA
+CV
+Aktif
+Ubah
+Hapus
+PT. MARTHA TRIA SELARAS
+PT
+Aktif
+Ubah
+Hapus
+PT. GANESA INOVASI
+PT
+Aktif
+Ubah
+Hapus
+PT. ADHI CITRABHUMI UTAMA
+PT
+Aktif
+Ubah
+Hapus
+PT. JASAPLAN REKANAN UTAMA
+PT
+Aktif
+Ubah
+Hapus
+PT. HERANDAS ENGINEER SYSTEM
+PT
+Aktif
+Ubah
+Hapus
+PT. BINARTHAMA KHARISMA
+PT
+Aktif
+Ubah
+Hapus
+PT. MULTI PRANATA MANDIRI NUSANTARA
+PT
+Aktif
+Ubah
+Hapus
+Menampilkan 1 sampai 10 dari 15 hasil
+per halaman
+5
+10
+25
+50
+Semua
+1
+2
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

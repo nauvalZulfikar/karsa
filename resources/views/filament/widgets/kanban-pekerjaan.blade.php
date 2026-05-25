@@ -163,6 +163,24 @@
             padding: 20px 0;
         }
 
+        /* Dark mode variables for modal */
+        .kanban-root {
+            --km-bg: #ffffff;
+            --km-text: #1f2937;
+            --km-muted: #6b7280;
+            --km-border: #e5e7eb;
+            --km-card-bg: #f9fafb;
+            --km-count-bg: #f9fafb;
+        }
+        .dark .kanban-root {
+            --km-bg: #1f2937;
+            --km-text: #f3f4f6;
+            --km-muted: #9ca3af;
+            --km-border: #374151;
+            --km-card-bg: #111827;
+            --km-count-bg: #111827;
+        }
+
         /* Modal styles */
         .kanban-modal-overlay {
             position: fixed;
@@ -175,32 +193,30 @@
             padding: 16px;
         }
         .kanban-modal {
-            background: #fff;
+            background: var(--km-bg);
+            color: var(--km-text);
             border-radius: 20px;
-            max-width: 600px;
+            max-width: 640px;
             width: 100%;
             max-height: 85vh;
             overflow-y: auto;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        .dark .kanban-modal { background: #1f2937; color: #f3f4f6; }
         .kanban-modal-header {
-            padding: 20px 24px 16px;
-            border-bottom: 1px solid #e5e7eb;
+            padding: 24px 40px 16px;
+            border-bottom: 1px solid var(--km-border);
             position: sticky;
             top: 0;
-            background: #fff;
+            background: var(--km-bg);
             border-radius: 20px 20px 0 0;
         }
-        .dark .kanban-modal-header { background: #1f2937; border-color: #374151; }
         .kanban-modal-title {
             font-size: 17px;
             font-weight: 700;
-            color: #1f2937;
+            color: var(--km-text);
             line-height: 1.3;
             margin: 0 0 8px 0;
         }
-        .dark .kanban-modal-title { color: #f3f4f6; }
         .kanban-modal-status {
             display: inline-block;
             font-size: 11px;
@@ -213,7 +229,7 @@
             position: absolute;
             top: 16px;
             right: 18px;
-            background: #f3f4f6;
+            background: var(--km-card-bg);
             border: none;
             width: 32px;
             height: 32px;
@@ -221,11 +237,10 @@
             cursor: pointer;
             font-size: 16px;
             line-height: 1;
-            color: #6b7280;
+            color: var(--km-muted);
         }
-        .kanban-modal-close:hover { background: #e5e7eb; }
-        .dark .kanban-modal-close { background: #374151; color: #d1d5db; }
-        .kanban-modal-body { padding: 20px 24px; }
+        .kanban-modal-close:hover { opacity: 0.7; }
+        .kanban-modal-body { padding: 24px 40px; }
         .kanban-modal-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -236,33 +251,22 @@
         .kanban-modal-label {
             font-size: 11px;
             font-weight: 600;
-            color: #6b7280;
+            color: var(--km-muted);
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        .dark .kanban-modal-label { color: #9ca3af; }
         .kanban-modal-value {
             font-size: 13px;
-            color: #1f2937;
+            color: var(--km-text);
             font-weight: 500;
         }
-        .dark .kanban-modal-value { color: #f3f4f6; }
         .kanban-modal-progress {
-            background: #e5e7eb;
+            background: var(--km-border);
             height: 10px;
             border-radius: 5px;
             overflow: hidden;
-            margin: 4px 0 16px;
+            margin: 4px 0 0;
         }
-        .dark .kanban-modal-progress { background: #374151; }
-        .kanban-modal-section-title {
-            font-size: 12px;
-            font-weight: 700;
-            color: #6b7280;
-            text-transform: uppercase;
-            margin: 16px 0 8px;
-        }
-        .dark .kanban-modal-section-title { color: #9ca3af; }
         .kanban-modal-counts {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -270,12 +274,11 @@
             margin-bottom: 16px;
         }
         .kanban-modal-count-card {
-            background: #f9fafb;
+            background: var(--km-count-bg);
             border-radius: 10px;
             padding: 10px 12px;
             text-align: center;
         }
-        .dark .kanban-modal-count-card { background: #111827; }
         .kanban-modal-count-num {
             font-size: 20px;
             font-weight: 700;
@@ -283,21 +286,19 @@
         }
         .kanban-modal-count-label {
             font-size: 11px;
-            color: #6b7280;
+            color: var(--km-muted);
         }
-        .dark .kanban-modal-count-label { color: #9ca3af; }
         .kanban-modal-actions {
-            padding: 16px 24px;
-            border-top: 1px solid #e5e7eb;
+            padding: 16px 40px;
+            border-top: 1px solid var(--km-border);
             display: flex;
             gap: 8px;
             justify-content: flex-end;
             position: sticky;
             bottom: 0;
-            background: #fff;
+            background: var(--km-bg);
             border-radius: 0 0 20px 20px;
         }
-        .dark .kanban-modal-actions { background: #1f2937; border-color: #374151; }
         .kanban-modal-btn {
             font-size: 13px;
             padding: 8px 18px;
@@ -313,13 +314,12 @@
         }
         .kanban-modal-btn-primary { background: #f59e0b; color: #fff; }
         .kanban-modal-btn-primary:hover { background: #d97706; }
-        .kanban-modal-btn-secondary { background: #f3f4f6; color: #374151; }
-        .kanban-modal-btn-secondary:hover { background: #e5e7eb; }
-        .dark .kanban-modal-btn-secondary { background: #374151; color: #e5e7eb; }
+        .kanban-modal-btn-secondary { background: var(--km-card-bg); color: var(--km-text); }
+        .kanban-modal-btn-secondary:hover { opacity: 0.8; }
     </style>
 
     <div class="kanban-root"
-         x-data="{ activeCard: null, openCard(c) { this.activeCard = c; } }">
+         x-data="{ activeCard: null, modalTab: 'info', openCard(c) { this.activeCard = c; this.modalTab = 'info'; } }">
 
         <div class="kanban-header">
             <div class="kanban-title">
@@ -418,84 +418,136 @@
                 </div>
 
                 <div class="kanban-modal-body">
-                    {{-- Counts --}}
-                    <div class="kanban-modal-counts">
-                        <div class="kanban-modal-count-card">
-                            <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_personil ?? 0"></div>
-                            <div class="kanban-modal-count-label">Personil</div>
+                    {{-- Tabs: Info | Milestone --}}
+                    <div style="display:flex; gap:24px; margin-bottom:16px; border-bottom:1px solid var(--km-border);">
+                        <button type="button" @click="modalTab='info'"
+                                :style="modalTab==='info' ? 'border-bottom:2px solid #f59e0b;color:#f59e0b;font-weight:600;' : 'color:var(--km-muted);'"
+                                style="padding:10px 4px;font-size:13px;background:none;border:none;cursor:pointer;margin-bottom:-1px;">
+                            Info & Progres
+                        </button>
+                        <button type="button" @click="modalTab='milestone'"
+                                :style="modalTab==='milestone' ? 'border-bottom:2px solid #f59e0b;color:#f59e0b;font-weight:600;' : 'color:var(--km-muted);'"
+                                style="padding:10px 4px;font-size:13px;background:none;border:none;cursor:pointer;margin-bottom:-1px;">
+                            Milestone
+                        </button>
+                    </div>
+
+                    {{-- TAB: Info & Progres --}}
+                    <div x-show="modalTab==='info'">
+                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                            <div style="flex:1;">
+                                <div class="kanban-modal-label">Progres</div>
+                                <div class="kanban-modal-progress">
+                                    <div class="kanban-card-progress-bar"
+                                         :style="`width: ${activeCard?.progres ?? 0}%; background: ${activeCard?.col_color}`"></div>
+                                </div>
+                            </div>
+                            <div style="font-size:20px;font-weight:700;color:#f59e0b;" x-text="`${activeCard?.progres ?? 0}%`"></div>
                         </div>
-                        <div class="kanban-modal-count-card">
-                            <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_termin ?? 0"></div>
-                            <div class="kanban-modal-count-label">Termin</div>
+                        <div class="kanban-modal-counts">
+                            <div class="kanban-modal-count-card">
+                                <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_personil ?? 0"></div>
+                                <div class="kanban-modal-count-label">Personil</div>
+                            </div>
+                            <div class="kanban-modal-count-card">
+                                <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_termin ?? 0"></div>
+                                <div class="kanban-modal-count-label">Termin</div>
+                            </div>
+                            <div class="kanban-modal-count-card">
+                                <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_milestone ?? 0"></div>
+                                <div class="kanban-modal-count-label">Milestone</div>
+                            </div>
                         </div>
-                        <div class="kanban-modal-count-card">
-                            <div class="kanban-modal-count-num" x-text="activeCard?.jumlah_milestone ?? 0"></div>
-                            <div class="kanban-modal-count-label">Milestone</div>
+                        <div class="kanban-modal-grid">
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Bidang</span><span class="kanban-modal-value" x-text="activeCard?.bidang || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Vendor</span><span class="kanban-modal-value" x-text="activeCard?.vendor || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">No SPK</span><span class="kanban-modal-value" x-text="activeCard?.no_spk || '-'" style="font-size:11px;"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">No SPMK</span><span class="kanban-modal-value" x-text="activeCard?.no_spmk || '-'" style="font-size:11px;"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Pagu</span><span class="kanban-modal-value" x-text="activeCard?.nilai_pagu || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Kontrak</span><span class="kanban-modal-value" x-text="activeCard?.nilai_kontrak || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Mulai</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_mulai || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Akhir</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_akhir || '-'"></span></div>
+                            <div class="kanban-modal-field"><span class="kanban-modal-label">Hari Kerja</span><span class="kanban-modal-value" x-text="activeCard?.hari_kerja ? `${activeCard.hari_kerja} hari` : '-'"></span></div>
+                            <div class="kanban-modal-field">
+                                <span class="kanban-modal-label">Sisa Hari</span>
+                                <span class="kanban-modal-value">
+                                    <template x-if="activeCard?.sisa_hari === null || activeCard?.sisa_hari === undefined"><span>-</span></template>
+                                    <template x-if="activeCard?.sisa_hari < 0"><span style="color:#dc2626;">⚠ Lewat <span x-text="Math.abs(activeCard?.sisa_hari)"></span> hari</span></template>
+                                    <template x-if="activeCard?.sisa_hari >= 0"><span x-text="`${activeCard?.sisa_hari} hari`"></span></template>
+                                </span>
+                            </div>
                         </div>
                     </div>
 
-                    {{-- Progress --}}
-                    <div class="kanban-modal-label">Progres</div>
-                    <div class="kanban-modal-progress">
-                        <div class="kanban-card-progress-bar"
-                             :style="`width: ${activeCard?.progres ?? 0}%; background: ${activeCard?.col_color}`"></div>
-                    </div>
-                    <div style="font-size: 13px; font-weight: 600; margin-bottom: 12px;"
-                         x-text="`${activeCard?.progres ?? 0}%`"></div>
-
-                    {{-- Field grid --}}
-                    <div class="kanban-modal-grid">
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Bidang</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.bidang || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Vendor</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.vendor || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">No SPK</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.no_spk || '-'" style="font-size:11px;"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">No SPMK</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.no_spmk || '-'" style="font-size:11px;"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Nilai Pagu</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.nilai_pagu || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Nilai Kontrak</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.nilai_kontrak || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Tanggal Mulai</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.tanggal_mulai || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Tanggal Akhir</span>
-                            <span class="kanban-modal-value" x-text="activeCard?.tanggal_akhir || '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Hari Kerja</span>
-                            <span class="kanban-modal-value"
-                                  x-text="activeCard?.hari_kerja ? `${activeCard.hari_kerja} hari` : '-'"></span>
-                        </div>
-                        <div class="kanban-modal-field">
-                            <span class="kanban-modal-label">Sisa Hari</span>
-                            <span class="kanban-modal-value">
-                                <template x-if="activeCard?.sisa_hari === null || activeCard?.sisa_hari === undefined">
-                                    <span>-</span>
+                    {{-- TAB: Milestone Checklist --}}
+                    <div x-show="modalTab==='milestone'">
+                        <template x-if="!activeCard?.milestones || activeCard.milestones.length === 0">
+                            <div style="text-align:center;padding:20px;color:var(--km-muted);font-size:13px;">Belum ada milestone</div>
+                        </template>
+                        <template x-for="ms in (activeCard?.milestones || [])" :key="ms.id">
+                            <div style="background:var(--km-card-bg);border-radius:10px;margin-bottom:10px;overflow:hidden;border:1px solid var(--km-border);">
+                                <div style="padding:10px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--km-border);">
+                                    <div>
+                                        <div style="font-weight:600;font-size:13px;color:var(--km-text);" x-text="`${ms.urutan}. ${ms.nama}`"></div>
+                                        <div style="font-size:11px;color:var(--km-muted);">
+                                            <span x-text="`${ms.target || '-'} · ${ms.progres}% · ${ms.status}`"></span>
+                                        </div>
+                                    </div>
+                                    <template x-if="ms.items && ms.items.length > 0">
+                                        <span style="font-size:11px;font-weight:600;color:#f59e0b;"
+                                              x-text="`${ms.items.filter(i => i.is_done_vendor).length}/${ms.items.length}`"></span>
+                                    </template>
+                                </div>
+                                <template x-if="ms.items && ms.items.length > 0">
+                                    <div style="padding:4px 0 8px;">
+                                        {{-- Column headers --}}
+                                        <div style="display:grid;grid-template-columns:1fr 56px 56px;padding:4px 24px;border-bottom:1px solid var(--km-border);">
+                                            <div style="font-size:10px;font-weight:700;color:var(--km-muted);text-transform:uppercase;">Item</div>
+                                            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--km-muted);text-transform:uppercase;">Vendor</div>
+                                            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--km-muted);text-transform:uppercase;">Admin</div>
+                                        </div>
+                                        <template x-for="section in ['kegiatan','deliverable']" :key="section">
+                                            <template x-if="ms.items.filter(i => i.tipe === section).length > 0">
+                                                <div>
+                                                    <div style="padding:8px 24px 2px;font-size:10px;font-weight:700;color:var(--km-muted);text-transform:uppercase;letter-spacing:0.05em;"
+                                                         x-text="section === 'kegiatan' ? 'Kegiatan' : 'Deliverable'"></div>
+                                                    <template x-for="ci in ms.items.filter(i => i.tipe === section)" :key="ci.id">
+                                                        <div style="display:grid;grid-template-columns:1fr 56px 56px;align-items:center;padding:5px 24px;">
+                                                            <div style="font-size:12px;color:var(--km-text);"
+                                                                 :style="(ci.is_done_vendor && ci.is_done_admin) ? 'text-decoration:line-through;opacity:0.4;' : ''"
+                                                                 x-text="ci.nama"></div>
+                                                            <div style="text-align:center;">
+                                                                <input type="checkbox" :checked="ci.is_done_vendor"
+                                                                       @if(auth()->user()->hasRole('vendor'))
+                                                                           wire:click="toggleVendor(ci.id)" @click="ci.is_done_vendor = !ci.is_done_vendor"
+                                                                           style="width:16px;height:16px;accent-color:#f59e0b;cursor:pointer;"
+                                                                       @else
+                                                                           disabled
+                                                                           style="width:16px;height:16px;accent-color:#f59e0b;cursor:default;opacity:0.6;"
+                                                                       @endif
+                                                                >
+                                                            </div>
+                                                            <div style="text-align:center;">
+                                                                <input type="checkbox" :checked="ci.is_done_admin"
+                                                                       @if(auth()->user()->hasAnyRole(['pptk','ppk','admin_bidang','super_admin']))
+                                                                           :disabled="!ci.is_done_vendor"
+                                                                           x-bind:style="ci.is_done_vendor ? 'width:16px;height:16px;accent-color:#f59e0b;cursor:pointer;' : 'width:16px;height:16px;accent-color:#f59e0b;cursor:default;opacity:0.3;'"
+                                                                           wire:click="toggleAdmin(ci.id)" @click="if(ci.is_done_vendor) ci.is_done_admin = !ci.is_done_admin"
+                                                                       @else
+                                                                           disabled
+                                                                           style="width:16px;height:16px;accent-color:#f59e0b;cursor:default;opacity:0.6;"
+                                                                       @endif
+                                                                >
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </template>
+                                    </div>
                                 </template>
-                                <template x-if="activeCard?.sisa_hari < 0">
-                                    <span style="color:#dc2626;">⚠ Lewat <span x-text="Math.abs(activeCard?.sisa_hari)"></span> hari</span>
-                                </template>
-                                <template x-if="activeCard?.sisa_hari >= 0">
-                                    <span x-text="`${activeCard?.sisa_hari} hari`"></span>
-                                </template>
-                            </span>
-                        </div>
+                            </div>
+                        </template>
                     </div>
                 </div>
 

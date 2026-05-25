@@ -1,17 +1,10 @@
 <x-filament-widgets::widget>
     <style>
-        .cal-overlay {
-            position: fixed; inset: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 9999; padding: 16px;
-        }
         .cal-modal {
             background: #fff; border-radius: 20px;
-            max-width: 1100px; width: 100%;
-            max-height: 90vh; overflow: hidden;
+            width: 100%;
+            overflow: hidden;
             display: flex; flex-direction: column;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
         .dark .cal-modal { background: #1f2937; color: #f3f4f6; }
         .cal-header {
@@ -138,12 +131,7 @@
         }
     </style>
 
-    @if ($isOpen)
-        <div class="cal-overlay"
-             wire:click.self="close"
-             wire:keydown.escape.window="close">
-
-            <div class="cal-modal" wire:click.stop>
+        <div class="cal-modal" style="box-shadow:0 4px 16px rgba(0,0,0,0.1);max-height:none;">
                 <div class="cal-header">
                     <div class="cal-title">
                         🗓️ {{ $monthLabel }}
@@ -152,7 +140,6 @@
                         <button type="button" class="cal-nav-btn" wire:click="prevMonth" title="Bulan sebelumnya">‹</button>
                         <button type="button" class="cal-nav-today" wire:click="goToday">Hari Ini</button>
                         <button type="button" class="cal-nav-btn" wire:click="nextMonth" title="Bulan berikutnya">›</button>
-                        <button type="button" class="cal-close" wire:click="close" title="Tutup" style="margin-left: 12px;">×</button>
                     </div>
                 </div>
 
@@ -219,7 +206,5 @@
                         <span class="cal-legend-dot" style="background:#dc2626;"></span> ⏰ Deadline Pekerjaan
                     </div>
                 </div>
-            </div>
         </div>
-    @endif
 </x-filament-widgets::widget>

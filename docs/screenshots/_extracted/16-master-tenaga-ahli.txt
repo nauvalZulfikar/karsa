@@ -1,0 +1,86 @@
+URL: http://localhost:8010/admin/master/tenaga-ahlis
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Tenaga Ahli
+Daftar
+Tenaga Ahli
+Buat Tenaga Ahli
+Cari
+Filter
+0
+Nama
+Jabatan/Keahlian
+Sertifikasi
+Perusahaan
+No. Telepon
+Status
+Proyek Aktif
+Tenaga Ahli 1
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Agus Santoso
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Tenaga Ahli Sipil
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Tenaga Pendukung - Surveyor
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Tenaga Pendukung - Asisten Surveyor
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Drafter
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Team Leader/Tenaga Ahli Sipil
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Surveyor
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Asisten Surveyor
+PT. ITERGO BUANA UTAMA
+Aktif
+0
+Ubah
+Menampilkan 1 sampai 9 dari 9 hasil
+per halaman
+5
+10
+25
+50
+Semua
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

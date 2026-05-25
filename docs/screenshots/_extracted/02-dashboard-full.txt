@@ -1,0 +1,131 @@
+URL: http://localhost:8010/admin
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Dasbor
+Selamat Datang
+Super Admin
+Keluar
+📑 Import Kontrak
+📤 Export Data
+🗓️ Kalender
+Apa yang bisa saya bantu hari ini?
+Tanya, atau minta saya update data — saya akan konfirmasi dulu
+Halo Super Admin! Saya asisten AI DPUTR. Coba: "berapa proyek kritis hari ini?" atau "update progres jalan soreang jadi 75%".
+📊 Status Hari Ini · Rabu, 20 Mei 2026
+──────────────────────────────
+📋 Ringkasan Proyek 2026
+Total: 7  •  Aktif: 4  •  Selesai: 3
+🚦 Status Waktu
+🟢 Aman: 0   🟡 Waspada: 0   🔴 Kritis: 0
+⛔ Terlambat: 4   ⏸ Backlog: 0
+⚠️ Perlu Perhatian
+• KAJIAN GEOTEKNIK STABILITAS TANAH — terlambat 65 hari
+• KAJIAN GEOTEKNIK STABILITAS TANAH — terlambat 65 hari
+• Perencanaan Teknik Pembangunan Drainase Perkota... — terlambat 51 hari
+📝 Hari Ini
+• 0 laporan harian masuk
+Tanya saya untuk detail lebih lanjut, atau pilih saran di bawah 👇
+Berapa proyek kritis hari ini?
+Tampilkan laporan harian hari ini
+Ringkasan dashboard
+Termin yang menunggu approval
+📋 Papan Pekerjaan 2026
+Klik card untuk lihat detail
+🌐 Semua
+Bangunan Gedung
+Drainase
+Jalan
+📋 Backlog
+0
+— Kosong —
+🟢 Aman
+0
+— Kosong —
+🟡 Waspada
+0
+— Kosong —
+🔴 Kritis
+0
+— Kosong —
+⛔ Terlambat
+4
+KAJIAN GEOTEKNIK STABILITAS TANAH
+· Bangunan Gedung
+0%
+⚠️ Lewat 65 hari
+KAJIAN GEOTEKNIK STABILITAS TANAH
+🏢 PT. ITERGO BUANA UTAMA
+· Bangunan Gedung
+0%
+⚠️ Lewat 65 hari
+DED Jalan Kabupaten Wilayah Ciwidey
+🏢 PT. PURNA WAHANA LESTARI
+· Jalan
+60%
+⚠️ Lewat 35 hari
+Perencanaan Teknik Pembangunan Drainase Perkotaan Wilayah 1
+🏢 PT. ADHI CITRABHUMI UTAMA
+· Drainase
+80%
+⚠️ Lewat 51 hari
+✅ Selesai
+3
+Kajian Pemetaan Topografi
+🏢 PT. PURNA WAHANA LESTARI...
+· Bangunan Gedung
+100%
+⚠️ Lewat 65 hari
+DED Jalan Kabupaten Wilayah Soreang
+🏢 PT. ADHI CITRABHUMI UTAMA
+· Jalan
+100%
+⚠️ Lewat 45 hari
+Penyusunan Outline pada Kawasan Genangan Wilayah Dayeuhkolot
+🏢 PT. PURNA WAHANA LESTARI...
+· Drainase
+100%
+⚠️ Lewat 51 hari
+Proyek Aktif
+2
+Total proyek sedang berjalan
+Total Nilai Kontrak Aktif
+Rp 0
+Akumulasi nilai kontrak proyek aktif
+Laporan Hari Ini (Pending)
+0
+Laporan vendor menunggu approval
+Termin Menunggu Persetujuan
+0
+Pengajuan pembayaran belum disetujui PPK
+Aman
+0
+Progres sesuai jadwal
+Waspada
+0
+Mendekati batas waktu
+Kritis
+0
+Sangat mendekati deadline
+Terlambat
+4
+Melewati tanggal kontrak
+Selesai
+3
+Pekerjaan telah selesai
+Belum Mulai
+0
+Tanggal mulai belum tercapai
+Distribusi Progres Pekerjaan
+Laporan Vendor Hari Ini
+Tidak ada data yang ditemukan
+per halaman
+5
+10
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Pengaturan
+Pengaturan

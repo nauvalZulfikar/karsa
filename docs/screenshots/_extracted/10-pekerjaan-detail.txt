@@ -1,0 +1,64 @@
+URL: http://localhost:8010/admin/pekerjaans/2
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Pekerjaan
+Lihat
+Lihat Pekerjaan
+Ubah
+Informasi Umum
+Bidang
+Bangunan Gedung
+Jenis Pekerjaan
+Nama Pekerjaan
+Perusahaan
+PT. PURNA WAHANA LESTARI KONSULTAN
+Status
+Selesai
+Tahun Anggaran
+Progress (%)
+%
+Nilai Anggaran
+Nilai Pagu (Rp)
+Rp
+Nilai Kontrak (Rp)
+Rp
+Tidak boleh melebihi nilai pagu
+SPK & SPMK
+Nomor SPK
+Tanggal SPK
+Nomor SPMK
+Tanggal SPMK
+Waktu Pelaksanaan
+Tanggal Mulai
+Tanggal Akhir
+Durasi
+hari
+Satuan Waktu
+Hari Kerja
+Hari Kalender
+Catatan
+Catatan
+Personil
+Vendor
+Rencana Pengadaan Barang
+Realisasi Pengadaan
+Dokumen Proyek
+Termin Pembayaran
+Milestone & Jadwal
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

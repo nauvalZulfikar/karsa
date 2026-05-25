@@ -16,4 +16,5 @@ class ViewPekerjaan extends ViewRecord
             Actions\EditAction::make(),
         ];
     }
+
 }

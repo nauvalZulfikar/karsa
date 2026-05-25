@@ -1,0 +1,74 @@
+URL: http://localhost:8010/admin/master/bidangs
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Bidang
+Daftar
+Bidang
+Buat Bidang
+Cari
+Filter
+0
+Kode
+Nama
+Kepala Bidang
+Status
+Diperbarui
+BG
+Bangunan Gedung
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+JL
+Jalan
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+DR
+Drainase
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+IR
+Irigasi
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+UM
+UMPEG
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+TR
+TARU
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+JK
+JAKON
+Aktif
+Mei 18, 2026 05:28:56
+Ubah
+Menampilkan 1 sampai 7 dari 7 hasil
+per halaman
+5
+10
+25
+50
+Semua
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

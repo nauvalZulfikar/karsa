@@ -25,21 +25,81 @@ class KontrakParserService
             );
         }
 
-        return $this->extractFields($text);
+        $result = $this->extractFields($text);
+
+        $jadwalLowQuality = empty($result['jadwal_pelaksanaan'])
+            || count($result['jadwal_pelaksanaan']) <= 1
+            || !collect($result['jadwal_pelaksanaan'])->contains(fn ($f) => str_contains(strtoupper($f['nama_fase'] ?? ''), 'KEGIATAN'));
+
+        if ($jadwalLowQuality) {
+            try {
+                $jadwal = $this->extractJadwalViaVision($pdfPath);
+                if (!empty($jadwal) && count($jadwal) > count($result['jadwal_pelaksanaan'] ?? [])) {
+                    $result['jadwal_pelaksanaan'] = $jadwal;
+                }
+            } catch (\Throwable $e) {
+                logger()->warning("Vision jadwal extraction failed: {$e->getMessage()}");
+            }
+        }
+
+        return $result;
     }
 
     private function extractText(string $pdfPath): string
     {
+        // 0. XLSX/XLS handling (penawaran kadang dalam excel)
+        $ext = strtolower(pathinfo($pdfPath, PATHINFO_EXTENSION));
+        if (in_array($ext, ['xlsx', 'xls'])) {
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($pdfPath);
+                $lines = [];
+                foreach ($spreadsheet->getAllSheets() as $sheet) {
+                    $lines[] = "=== Sheet: {$sheet->getTitle()} ===";
+                    foreach ($sheet->toArray(null, true, true, false) as $row) {
+                        $cells = array_filter(array_map('strval', $row), fn ($v) => trim($v) !== '');
+                        if (!empty($cells)) $lines[] = implode(' | ', $cells);
+                    }
+                }
+                return mb_substr(implode("\n", $lines), 0, 14000);
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Gagal baca XLSX: ' . $e->getMessage());
+            }
+        }
+
+        // 1. Cek cache ocr_text di ChatUpload — jauh lebih cepat
+        $cached = \App\Models\ChatUpload::where('abs_path', $pdfPath)->first();
+        if ($cached && mb_strlen((string) $cached->ocr_text) >= 200) {
+            return mb_substr(preg_replace('/\s+/', ' ', $cached->ocr_text), 0, 14000);
+        }
+
         try {
             $parser = new Parser();
             $pdf    = $parser->parseFile($pdfPath);
-            $text   = $pdf->getText();
-
-            $text = preg_replace('/\s+/', ' ', $text);
-            return mb_substr($text, 0, 14000);
+            $text   = trim($pdf->getText());
         } catch (\Throwable $e) {
-            throw new \RuntimeException('Gagal membaca PDF: ' . $e->getMessage());
+            $text = '';
         }
+
+        // 2. Scanned PDF fallback: text kosong/sedikit → OCR via Vision
+        if (mb_strlen($text) < 200) {
+            try {
+                $ocrText = trim(app(PdfOcrService::class)->ocr($pdfPath, 6));
+                if (mb_strlen($ocrText) >= 200) {
+                    $text = $ocrText;
+                    \App\Models\ChatUpload::where('abs_path', $pdfPath)->update([
+                        'is_scanned_pdf' => true,
+                        'ocr_text' => mb_substr($ocrText, 0, 15000),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                if (mb_strlen($text) < 50) {
+                    throw new \RuntimeException('PDF tidak terbaca + OCR fallback gagal: ' . $e->getMessage());
+                }
+            }
+        }
+
+        $text = preg_replace('/\s+/', ' ', $text);
+        return mb_substr($text, 0, 14000);
     }
 
     private function extractFields(string $documentText): array
@@ -92,6 +152,13 @@ class KontrakParserService
               "hari_setelah_mulai": 14,
               "sumber": "kontrak atau generated_ai"
             }
+          ],
+          "jadwal_pelaksanaan": [
+            {
+              "nama_fase": "Fase A / Tahap I / label apapun dari dokumen",
+              "kegiatan": ["aktivitas 1", "aktivitas 2"],
+              "minggu_selesai": 4
+            }
           ]
         }
 
@@ -103,11 +170,15 @@ class KontrakParserService
            - hari_setelah_mulai: berapa hari dari tanggal mulai (akan dihitung jadi tanggal target)
            - progres_target_persen: target progres kumulatif di milestone tersebut
         3. denda_per_hari_permil: denda keterlambatan dalam permil (1‰ = 1.0). Untuk identifikasi tingkat kekritisan deadline.
+        4. jadwal_pelaksanaan: Ekstrak tabel Jadwal Pelaksanaan dari SPK. Deteksi label fase (A/B/C/D, Fase I/II/III, atau apapun).
+           minggu_selesai = nomor minggu akhir dari kolom Gantt (integer dari awal kontrak). Kalau tabel tidak ada, kembalikan array kosong [].
 
         Dokumen:
         PROMPT;
 
-        $response = Http::timeout(90)
+        $response = Http::timeout(120)
+            ->connectTimeout(30)
+            ->retry(2, 2000)
             ->withToken($this->apiKey)
             ->post($this->apiUrl, [
                 'model'           => 'gpt-4o-mini',
@@ -128,9 +199,10 @@ class KontrakParserService
         $data = json_decode($raw, true) ?? [];
 
         return [
-            'pekerjaan'         => $this->normalizePekerjaan($data['pekerjaan'] ?? []),
-            'termin_pembayaran' => $this->normalizeTermin($data['termin_pembayaran'] ?? []),
-            'milestones'        => $this->normalizeMilestones($data['milestones'] ?? []),
+            'pekerjaan'          => $this->normalizePekerjaan($data['pekerjaan'] ?? []),
+            'termin_pembayaran'  => $this->normalizeTermin($data['termin_pembayaran'] ?? []),
+            'milestones'         => $this->normalizeMilestones($data['milestones'] ?? []),
+            'jadwal_pelaksanaan' => $this->normalizeJadwal($data['jadwal_pelaksanaan'] ?? []),
         ];
     }
 
@@ -209,6 +281,29 @@ class KontrakParserService
         return $result;
     }
 
+    private function normalizeJadwal(array $list): array
+    {
+        $result = [];
+        foreach ($list as $item) {
+            if (!is_array($item)) continue;
+            $minggu = isset($item['minggu_selesai']) ? (int) $item['minggu_selesai'] : 0;
+            if ($minggu <= 0) continue;
+            $kegiatan = [];
+            if (is_array($item['kegiatan'] ?? null)) {
+                foreach ($item['kegiatan'] as $k) {
+                    $s = isset($k) && $k !== '' ? (string) $k : null;
+                    if ($s !== null) $kegiatan[] = $s;
+                }
+            }
+            $result[] = [
+                'nama_fase'    => (string) ($item['nama_fase'] ?? ''),
+                'kegiatan'     => $kegiatan,
+                'minggu_selesai' => $minggu,
+            ];
+        }
+        return $result;
+    }
+
     private function normalizeDate(mixed $value): ?string
     {
         if (empty($value)) return null;
@@ -224,5 +319,132 @@ class KontrakParserService
         if ($value === null || $value === '') return null;
         $clean = preg_replace('/[^0-9.]/', '', (string) $value);
         return is_numeric($clean) ? $clean : null;
+    }
+
+    private function extractJadwalViaVision(string $pdfPath): array
+    {
+        if (empty($this->apiKey)) return [];
+
+        $candidates = $this->findJadwalCandidatePages($pdfPath);
+        if (empty($candidates)) return [];
+
+        $images = [];
+        foreach ($candidates as $pageIdx) {
+            $png = $this->renderSinglePage($pdfPath, $pageIdx);
+            if (!empty($png)) {
+                $images[] = ['page' => $pageIdx, 'base64' => $png];
+            }
+        }
+        if (empty($images)) return [];
+
+        $prompt = count($images) > 1
+            ? "Kamu menerima " . count($images) . " gambar halaman PDF. Cari yang berisi tabel Jadwal Pelaksanaan / Gantt chart (bukan diagram alir / flowchart). Abaikan halaman yang bukan Gantt chart.\n\n"
+            : "";
+
+        $prompt .= <<<'PROMPT'
+Dari gambar Gantt chart / Jadwal Pelaksanaan, perhatikan VISUAL: posisi bar berwarna di kolom minggu, arah flow kegiatan, S-curve kalau ada.
+
+Ekstrak dan return HANYA valid JSON (tanpa markdown/komentar):
+{
+  "jadwal_pelaksanaan": [
+    {
+      "nama_fase": "label fase persis dari dokumen (misal: A. KEGIATAN PERSIAPAN)",
+      "kegiatan": ["sub-kegiatan 1", "sub-kegiatan 2"],
+      "minggu_selesai": 1
+    }
+  ]
+}
+
+ATURAN:
+- Baca SETIAP baris kegiatan dari tabel, jangan skip
+- minggu_selesai = minggu ke-berapa dari awal proyek kegiatan ini selesai (lihat posisi bar di kolom)
+- Kalau bar span 2 minggu (misal minggu 2-3), pakai minggu akhir (3)
+- Urutan fase sesuai urutan KRONOLOGIS (mana yang mulai duluan), BUKAN urutan baris di tabel
+- Kalau tabel terbalik (baris bawah = awal proyek), balik urutannya
+PROMPT;
+
+        $content = [['type' => 'text', 'text' => $prompt]];
+        foreach ($images as $img) {
+            $content[] = [
+                'type' => 'image_url',
+                'image_url' => ['url' => 'data:image/png;base64,' . $img['base64']],
+            ];
+        }
+
+        $response = Http::timeout(120)
+            ->connectTimeout(30)
+            ->withToken($this->apiKey)
+            ->post($this->apiUrl, [
+                'model'      => 'gpt-4o',
+                'max_tokens' => 1500,
+                'messages'   => [
+                    ['role' => 'system', 'content' => 'Kamu ahli membaca Gantt chart dan jadwal proyek dari gambar. Return HANYA JSON valid. Abaikan gambar yang bukan Gantt chart.'],
+                    ['role' => 'user', 'content' => $content],
+                ],
+            ]);
+
+        if (!$response->successful()) return [];
+
+        $raw = $response->json('choices.0.message.content', '');
+        $raw = preg_replace('/^```json\s*|```\s*$/m', '', trim($raw));
+        $data = json_decode($raw, true);
+
+        return $this->normalizeJadwal($data['jadwal_pelaksanaan'] ?? []);
+    }
+
+    private function findJadwalCandidatePages(string $pdfPath): array
+    {
+        $script = <<<'PY'
+import sys, json, fitz
+doc = fitz.open(sys.argv[1])
+candidates = []
+for i in range(len(doc)):
+    text = doc[i].get_text().lower()
+    if 'jadwal pelaksanaan' not in text:
+        continue
+    # Skip TOC (early pages with lots of text)
+    if i < 10 and len(doc[i].get_text().strip()) > 500:
+        continue
+    # Check current page and next page
+    cur_len = len(doc[i].get_text().strip())
+    next_idx = i + 1 if i + 1 < len(doc) else None
+    next_len = len(doc[next_idx].get_text().strip()) if next_idx and next_idx < len(doc) else 9999
+    # Prefer pages with little text (= image/table)
+    if cur_len < 200:
+        candidates.append(i)
+    if next_idx and next_len < 200:
+        candidates.append(next_idx)
+# Deduplicate and limit to 4
+candidates = sorted(set(candidates))[:4]
+print(json.dumps(candidates))
+PY;
+        $tmpScript = tempnam(sys_get_temp_dir(), 'jadwal_') . '.py';
+        file_put_contents($tmpScript, $script);
+        $output = trim((string) shell_exec(sprintf('python "%s" "%s" 2>&1', $tmpScript, $pdfPath)));
+        @unlink($tmpScript);
+
+        $pages = json_decode($output, true);
+        return is_array($pages) ? $pages : [];
+    }
+
+    private function renderSinglePage(string $pdfPath, int $pageIndex): ?string
+    {
+        $script = <<<'PY'
+import sys, base64, fitz
+doc = fitz.open(sys.argv[1])
+idx = int(sys.argv[2])
+if idx >= len(doc):
+    sys.exit(1)
+page = doc[idx]
+zoom = 250 / 72
+pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+print(base64.b64encode(pix.tobytes("png")).decode("ascii"))
+PY;
+        $tmpScript = tempnam(sys_get_temp_dir(), 'render_') . '.py';
+        file_put_contents($tmpScript, $script);
+        $output = trim((string) shell_exec(sprintf('python "%s" "%s" %d 2>&1', $tmpScript, $pdfPath, $pageIndex)));
+        @unlink($tmpScript);
+
+        return !empty($output) && strlen($output) > 1000 ? $output : null;
     }
 }

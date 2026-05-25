@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Filament\Resources\PekerjaanResource;
 use App\Models\Master\Bidang;
+use App\Models\MilestoneChecklistItem;
 use App\Models\Pekerjaan;
 use Filament\Widgets\Widget;
 
@@ -21,9 +22,37 @@ class KanbanPekerjaanWidget extends Widget
         $this->filterBidangId = $bidangId;
     }
 
+    public function toggleVendor(int $itemId): void
+    {
+        $item = MilestoneChecklistItem::find($itemId);
+        if (!$item) return;
+        abort_unless(
+            auth()->user()->hasRole('vendor')
+            && $item->milestonePekerjaan->pekerjaan->perusahaan_id === auth()->user()->perusahaan_id,
+            403
+        );
+        $item->update([
+            'is_done_vendor' => !$item->is_done_vendor,
+            'vendor_done_at' => !$item->is_done_vendor ? now() : null,
+        ]);
+    }
+
+    public function toggleAdmin(int $itemId): void
+    {
+        $item = MilestoneChecklistItem::find($itemId);
+        if (!$item) return;
+        abort_unless(auth()->user()->hasAnyRole(['pptk', 'ppk', 'admin_bidang', 'super_admin']), 403);
+        abort_unless($item->is_done_vendor, 403);
+        $item->update([
+            'is_done_admin' => !$item->is_done_admin,
+            'admin_done_at' => !$item->is_done_admin ? now() : null,
+            'admin_done_by' => !$item->is_done_admin ? auth()->id() : null,
+        ]);
+    }
+
     public function getViewData(): array
     {
-        $query = Pekerjaan::with(['perusahaan', 'bidang', 'statusPekerjaan'])
+        $query = Pekerjaan::with(['perusahaan', 'bidang', 'statusPekerjaan', 'milestones.checklistItems'])
             ->where('tahun_anggaran', date('Y'));
 
         if ($this->filterBidangId) {
@@ -62,10 +91,25 @@ class KanbanPekerjaanWidget extends Widget
                 'jumlah_personil'=> $p->personil()->count(),
                 'jumlah_termin'  => $p->terminPembayaran()->count(),
                 'jumlah_milestone'=> $p->milestones()->count(),
-                'status_label'   => $p->statusPekerjaan?->nama,
+                'status_label'   => $p->statusPekerjaan?->nama ?? ($p->status_waktu ?? 'Belum Mulai'),
                 'url_detail'     => PekerjaanResource::getUrl('view', ['record' => $p->id]),
                 'url_edit'       => PekerjaanResource::getUrl('edit', ['record' => $p->id]),
                 'col_color'      => $columns[$status]['color'],
+                'milestones'     => $p->milestones->map(fn ($m) => [
+                    'id'       => $m->id,
+                    'urutan'   => $m->urutan,
+                    'nama'     => $m->nama,
+                    'target'   => $m->tanggal_target?->format('d M Y'),
+                    'progres'  => $m->progres_target_persen,
+                    'status'   => $m->status_label,
+                    'items'    => $m->checklistItems->map(fn ($ci) => [
+                        'id'             => $ci->id,
+                        'tipe'           => $ci->tipe,
+                        'nama'           => $ci->nama,
+                        'is_done_vendor' => (bool) $ci->is_done_vendor,
+                        'is_done_admin'  => (bool) $ci->is_done_admin,
+                    ])->toArray(),
+                ])->toArray(),
             ];
         }
 

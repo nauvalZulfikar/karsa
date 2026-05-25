@@ -27,6 +27,7 @@ class Pekerjaan extends Model
         'no_spk', 'tanggal_spk', 'no_spmk', 'tanggal_spmk',
         'tanggal_mulai', 'tanggal_akhir', 'hari_kerja', 'satuan_waktu',
         'progres_persen', 'catatan', 'kickoff_dokumen_path',
+        'lokasi',
         'created_by', 'updated_by',
     ];
 

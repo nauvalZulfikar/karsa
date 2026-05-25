@@ -1,0 +1,10 @@
+URL: http://localhost:8010/vendor/login
+VIEWPORT: {'width': 414, 'height': 896}
+---
+Portal Vendor — DPUTR
+Masuk ke akun Anda
+Alamat email*
+Kata sandi*
+Tampilkan kata sandi
+Ingat saya
+Masuk

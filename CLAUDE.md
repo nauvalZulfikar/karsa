@@ -41,6 +41,11 @@ Panel admin: http://localhost:8000/admin
 - Vendor daily report windows: masuk 06:00–09:00, pulang 15:00–18:00
 - Photo stamps are applied server-side (tamper-proof)
 - Activity log is read-only (no delete/edit by anyone)
+- **Milestone Confirmation Workflow (Phase 4+):**
+  - Vendor marks milestones as submitted (status: `diajukan_vendor`)
+  - Admin reviews and confirms (`dikonfirmasi`) or rejects with reason (`ditolak` + `alasan_penolakan`)
+  - Auto WA + DB notification on vendor submission via MilestoneRelationManager
+  - Server-side role auth: vendor can only submit own; admin can confirm/reject/mark-done
 
 ## Storage Layout
 ```
@@ -61,7 +66,10 @@ storage/app/
 ## Module Map
 - Phase 2: `app/Models/User.php`, `app/Filament/Resources/UserResource.php`
 - Phase 3: `app/Models/Master/` (Bidang, Perusahaan, TenagaAhli, etc.)
-- Phase 4: `app/Models/Pekerjaan.php`, kick-off OCR parsing service
+- Phase 4: `app/Models/Pekerjaan.php`, `app/Models/MilestonePekerjaan.php`
+  - Parsers: `KickoffParserService` (keluaran KAK + pelaporan), `KontrakParserService` (jadwal_pelaksanaan Gantt)
+  - AI merge: `AiChatService::mergeMilestonesFromParsedDocs()` combines KAK deliverables + SPK phases
+  - Confirmation: `app/Filament/Resources/MilestoneRelationManager.php` (vendor ajukan_selesai, admin konfirmasi/tolak/tandai_selesai)
 - Phase 5: `app/Console/Commands/UpdateStatusPekerjaan.php`
 - Phase 6: `app/Models/PekerjaanPersonil.php`
 - Phase 7: `app/Filament/VendorPanel/`, `app/Models/LaporanHarian.php`

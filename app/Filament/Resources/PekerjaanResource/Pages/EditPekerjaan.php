@@ -15,6 +15,8 @@ class EditPekerjaan extends EditRecord
         return [
             Actions\ViewAction::make(),
             Actions\DeleteAction::make(),
+            Actions\ForceDeleteAction::make()
+                ->label('Hapus Permanen'),
             Actions\RestoreAction::make(),
         ];
     }
@@ -24,4 +26,5 @@ class EditPekerjaan extends EditRecord
         $data['updated_by'] = auth()->id();
         return $data;
     }
+
 }

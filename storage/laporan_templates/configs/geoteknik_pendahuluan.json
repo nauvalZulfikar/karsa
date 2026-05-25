@@ -1,0 +1,29 @@
+{
+  "jenis": "geoteknik",
+  "template_file": "geoteknik_pendahuluan.docx",
+  "description": "Template Laporan Pendahuluan Geoteknik / Stabilitas Lereng (from Itergo SR Ciwidey)",
+  "substitutions": {
+    "_comment": "Map literal strings dari template original → token yg di-resolve dari pekerjaan. Token diawali :",
+    "PT. Itergo Buana Utama": ":vendor",
+    "PT. ITERGO BUANA UTAMA": ":vendor",
+    "Itergo Buana Utama": ":vendor_short",
+    "Sekolah Rakyat (SR) Ciwidey": ":project_subject",
+    "Sekolah Rakyat Ciwidey": ":project_subject",
+    "SR Ciwidey": ":project_subject_short",
+    "Desa Lebakmuncang, Kecamatan Ciwidey, Kabupaten Bandung": ":lokasi_detail",
+    "Analisis Stabilitas Lereng": ":nama_pekerjaan_short",
+    "Kementerian Sosial": ":pemberi_kerja",
+    "Kemensos": ":pemberi_kerja_short"
+  },
+  "token_resolvers": {
+    "_comment": "Cara Karta resolve token dari Pekerjaan model fields",
+    ":vendor": "perusahaan.nama",
+    ":vendor_short": "perusahaan.nama_short OR perusahaan.nama",
+    ":project_subject": "auto_from(nama_pekerjaan) — fallback ke nama_pekerjaan",
+    ":project_subject_short": "auto_from(nama_pekerjaan, max=30)",
+    ":lokasi_detail": "lokasi OR 'Kabupaten Bandung, Jawa Barat'",
+    ":nama_pekerjaan_short": "nama_pekerjaan (max 40)",
+    ":pemberi_kerja": "constant: DPUTR Kabupaten Bandung",
+    ":pemberi_kerja_short": "constant: DPUTR"
+  }
+}

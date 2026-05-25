@@ -1,0 +1,48 @@
+URL: http://localhost:8010/admin/users
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Pengguna
+Daftar
+Pengguna
+Buat Pengguna
+Cari
+Filter
+0
+Buat/batalkan pilihan semua item untuk tindakan massal.
+Nama
+Email
+Role
+Status
+Dibuat
+Buat/batalkan pilihan item 1 untuk tindakan massal.
+Super Admin
+admin@dputr.go.id
+super_admin
+Aktif
+Mei 18, 2026
+Ubah
+Hapus
+Menampilkan 1 hasil
+per halaman
+5
+10
+25
+50
+Semua
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

@@ -1,0 +1,203 @@
+URL: http://localhost:8010/admin/activities
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Audit Trail
+Daftar
+Audit Trail
+Filter
+0
+Waktu
+Aksi
+Objek
+ID
+Dilakukan Oleh
+Deskripsi
+Perubahan
+20 Mei 2026 10:11:08
+Diubah
+Pekerjaan
+2
+Super Admin
+updated
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+79
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+80
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+81
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+82
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+83
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+84
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+85
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+86
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+87
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+88
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+89
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+90
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 10:11:08
+Dibuat
+RencanaPengadaan
+91
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 09:25:43
+Dibuat
+Dokumen
+16
+Sistem
+created
+-
+Lihat
+20 Mei 2026 09:24:42
+Diubah
+Pekerjaan
+2
+Sistem
+updated
+-
+Lihat
+20 Mei 2026 09:24:42
+Diubah
+Perusahaan
+14
+Sistem
+updated
+-
+Lihat
+20 Mei 2026 07:46:52
+Dibuat
+Dokumen
+15
+Super Admin
+created
+-
+Lihat
+20 Mei 2026 07:46:24
+Dibuat
+Pekerjaan
+24
+Super Admin
+created
+-
+Lihat
+19 Mei 2026 16:52:48
+Dibuat
+Dokumen
+14
+Super Admin
+created
+-
+Lihat
+19 Mei 2026 16:52:23
+Dibuat
+Pekerjaan
+23
+Super Admin
+created
+-
+Lihat
+19 Mei 2026 16:48:18
+Dibuat
+Dokumen
+13
+Super Admin
+created
+-
+Lihat
+19 Mei 2026 16:47:51
+Dibuat
+Pekerjaan
+22
+Super Admin
+created
+-
+Lihat
+19 Mei 2026 16:29:59
+Dibuat
+Dokumen

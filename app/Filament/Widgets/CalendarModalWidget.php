@@ -12,11 +12,11 @@ use Livewire\Attributes\On;
 class CalendarModalWidget extends Widget
 {
     protected static string $view = 'filament.widgets.calendar-modal';
-    protected static ?int $sort = 99;
+    protected static ?int $sort = 5;
     protected static bool $isLazy = false;
     protected int|string|array $columnSpan = 'full';
 
-    public bool $isOpen = false;
+    public bool $isOpen = true;
     public string $currentMonth;
 
     public function mount(): void

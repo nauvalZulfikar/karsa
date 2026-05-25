@@ -27,7 +27,7 @@
 
 ### Sprint 1 — Foundation (Sprint Goal: Tools dasar CRUD + workflow)
 
-- [x] **F1.1** · done 2026-05-17 08:51
+- [ ] **F1.1** Consolidate roles 6→4 (Superadmin, Admin, Vendor, Staff)
   - Action: rename `admin_bidang` → `admin`, hapus `pptk`/`ppk`/`viewer` atau merge ke roles 4
   - Update: middleware, gates, seeders, blueprint
   - Est: 2-3h · Depends: none
@@ -72,10 +72,9 @@
   - Pre-cond: user = Vendor
   - Est: 1-2h · Depends: F1.1
 
-- [ ] **F1.10** UI: File upload in chat widget
-  - Drag-drop PDF/XLSX into chat → auto upload + reference to AI tool
-  - Est: 4-5h · Depends: none
-  - Files: `resources/views/filament/ai-chat.blade.php`, JS component
+- [x] **F1.10** · done 2026-05-17 — UI: File upload in chat widget
+  - Drag-drop + paperclip button, chip preview, multi-file, auto-inject path ke message
+  - Files: `app/Livewire/AiChatWidget.php`, `resources/views/livewire/ai-chat-widget.blade.php`
 
 ### Sprint 2 — Writer Foundation (Sprint Goal: Generate Laporan + Invoice full)
 

@@ -1,0 +1,141 @@
+URL: http://localhost:8010/admin/pekerjaans
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Pekerjaan
+Daftar
+Pekerjaan
+Import dari Kontrak
+Buat Pekerjaan
+Semua
+Tahun 2026
+Sedang Berjalan
+Deadline Dekat
+Terlambat
+Selesai
+Simpan Filter sebagai Preset
+Cari
+Filter
+0
+Pilih kolom
+Buat/batalkan pilihan semua item untuk tindakan massal.
+Nama Pekerjaan
+Bidang
+Perusahaan
+Nilai Pagu
+Traffic Light
+Sisa Hari Kerja
+Status
+Deadline
+Progress
+Buat/batalkan pilihan item 2 untuk tindakan massal.
+Kajian Pemetaan Topografi
+Bangunan Gedung
+PT. PURNA WAHANA LESTARI KONSULTAN
+Rp 99.511.500,00
+Selesai
+-65 hari
+Selesai
+03/02/2026
+100%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 23 untuk tindakan massal.
+KAJIAN GEOTEKNIK STABILITAS TANAH
+Bangunan Gedung
+PT. ITERGO BUANA UTAMA
+Rp 100.000.000,00
+Terlambat
+-65 hari
+03/02/2026
+0%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 24 untuk tindakan massal.
+KAJIAN GEOTEKNIK STABILITAS TANAH
+Bangunan Gedung
+Rp 100.000.000,00
+Terlambat
+-65 hari
+03/02/2026
+0%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 5 untuk tindakan massal.
+Penyusunan Outline pada Kawasan Genangan Wilayah Dayeuhkolot
+Drainase
+PT. PURNA WAHANA LESTARI KONSULTAN
+Rp 99.335.000,00
+Selesai
+-51 hari
+Selesai
+24/02/2026
+100%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 6 untuk tindakan massal.
+Perencanaan Teknik Pembangunan Drainase Perkotaan Wilayah 1
+Drainase
+PT. ADHI CITRABHUMI UTAMA
+Rp 99.612.500,00
+Terlambat
+-51 hari
+Review Internal
+24/02/2026
+80%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 4 untuk tindakan massal.
+DED Jalan Kabupaten Wilayah Soreang
+Jalan
+PT. ADHI CITRABHUMI UTAMA
+Rp 99.567.000,00
+Selesai
+-45 hari
+Selesai
+04/03/2026
+100%
+Lihat
+Ubah
+Hapus
+Buat/batalkan pilihan item 3 untuk tindakan massal.
+DED Jalan Kabupaten Wilayah Ciwidey
+Jalan
+PT. PURNA WAHANA LESTARI
+Rp 99.567.000,00
+Terlambat
+-35 hari
+Proses Desain
+18/03/2026
+60%
+Lihat
+Ubah
+Hapus
+Menampilkan 1 sampai 7 dari 7 hasil
+per halaman
+5
+10
+25
+50
+Semua
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail

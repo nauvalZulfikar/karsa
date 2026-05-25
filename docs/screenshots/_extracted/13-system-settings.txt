@@ -1,0 +1,52 @@
+URL: http://localhost:8010/admin/system-settings
+VIEWPORT: {'width': 1440, 'height': 900}
+---
+Pencarian global
+Pengaturan Sistem
+Informasi Instansi
+Nama Instansi*
+Nama Singkat*
+Alamat Kantor
+Nomor Telepon Kantor
+Tahun Anggaran Aktif*
+Tahun yang muncul sebagai default di semua filter
+Notifikasi WhatsApp
+Alert Deadline (hari ke-)*
+Pisahkan dengan koma. Contoh: 14,7,3 artinya WA dikirim saat sisa H-14, H-7, dan H-3
+Notifikasi Deadline
+WA peringatan deadline ke personil
+Notifikasi Laporan Harian
+WA reminder ke vendor yang belum lapor
+Notifikasi Termin
+WA ke PPK untuk termin pending
+Jam Laporan Vendor
+Atur batas waktu vendor bisa submit laporan harian
+Jam Buka Laporan Masuk
+Format HH:MM
+Jam Tutup Laporan Masuk
+Format HH:MM
+Jam Buka Laporan Pulang
+Format HH:MM
+Jam Tutup Laporan Pulang
+Format HH:MM
+Sistem
+Mode Maintenance
+Aktifkan saat melakukan pemeliharaan sistem. Hanya super_admin yang bisa login.
+Simpan Pengaturan
+Reset ke Tersimpan
+DPUTR Project Management
+Dasbor
+Laporan Harian
+Master Data
+Master Data
+Bidang
+Hari Libur
+Jenis Pekerjaan
+Perusahaan
+Status Pekerjaan
+Tenaga Ahli
+Pengaturan
+Pengaturan
+Pengaturan Sistem
+Pengguna
+Audit Trail
