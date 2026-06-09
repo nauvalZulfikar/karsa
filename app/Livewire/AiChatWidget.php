@@ -22,7 +22,7 @@ class AiChatWidget extends Component
     public ?int $sessionId = null;
     public bool $showHistory = false;
 
-    #[Validate(['file', 'max:20480', 'mimes:pdf,xlsx,xls,docx,jpg,jpeg,png'])]
+    #[Validate(['file', 'max:512000', 'mimes:pdf,xlsx,xls,docx,jpg,jpeg,png'])]
     public $uploadedFile;
 
     public $uploadedFiles = [];
