@@ -1,0 +1,7 @@
+# Python deps for helper scripts called by PHP (scripts/*.py)
+#   pdf_ocr_render.py            -> pymupdf (fitz)   : scanned-PDF OCR render
+#   laporan_render.py            -> python-docx      : .docx report rendering
+#   laporan_compose_template.py  -> python-docx      : composed .docx reports
+# Install: pip install -r requirements.txt  (prefer a venv; see scripts/deploy.sh)
+pymupdf>=1.24
+python-docx>=1.1

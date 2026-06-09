@@ -59,7 +59,8 @@ class LaporanTemplateService
         file_put_contents($subsFile, json_encode($subs, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         $cmd = sprintf(
-            'python "%s" --template "%s" --output "%s" --subs-file "%s" 2>&1',
+            '%s "%s" --template "%s" --output "%s" --subs-file "%s" 2>&1',
+            config('services.python.bin', 'python3'),
             base_path('scripts/laporan_render.py'),
             $tmplFile,
             $outPath,

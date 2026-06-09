@@ -21,7 +21,7 @@ err() { echo -e "\033[1;31m✗\033[0m $*" >&2; }
 # 1. Install dependencies (Ubuntu/Debian)
 log "Step 1/9: Install system dependencies"
 apt-get update -qq
-apt-get install -y -qq software-properties-common curl unzip git nginx mariadb-server certbot python3-certbot-nginx
+apt-get install -y -qq software-properties-common curl unzip git nginx mariadb-server certbot python3-certbot-nginx python3 python3-pip python3-venv
 add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
 apt-get update -qq
 apt-get install -y -qq php${PHP_VERSION} php${PHP_VERSION}-{cli,fpm,mysql,xml,mbstring,gd,curl,bcmath,zip,intl,redis,sqlite3,opcache,readline}
@@ -57,6 +57,17 @@ SQL
 log "Step 4/9: Install PHP dependencies"
 cd "${PROJECT_DIR}"
 composer install --no-dev --optimize-autoloader --no-interaction
+
+# 4b. Python deps for helper scripts (OCR render + laporan .docx renderer)
+log "Step 4b: Install Python deps (pymupdf, python-docx) into venv"
+VENV_DIR="${PROJECT_DIR}/.venv"
+VENV_PY="${VENV_DIR}/bin/python"
+[ -x "${VENV_PY}" ] || python3 -m venv "${VENV_DIR}"
+"${VENV_PY}" -m pip install --quiet --upgrade pip
+"${VENV_PY}" -m pip install --quiet -r "${PROJECT_DIR}/requirements.txt"
+# venv must be readable/executable by the php-fpm + queue worker user
+chmod -R a+rX "${VENV_DIR}"
+"${VENV_PY}" -c "import fitz, docx; print('python deps OK:', fitz.__doc__.split(chr(10))[0])"
 
 # 5. Setup .env
 log "Step 5/9: Configure .env"
@@ -107,6 +118,12 @@ sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
 sed -i "s|^APP_URL=.*|APP_URL=https://${DOMAIN}|" .env
 sed -i "s|^APP_ENV=.*|APP_ENV=production|" .env
 sed -i "s|^APP_DEBUG=.*|APP_DEBUG=false|" .env
+# Point PHP helper scripts at the venv python
+if grep -q '^PYTHON_BIN=' .env; then
+  sed -i "s|^PYTHON_BIN=.*|PYTHON_BIN=${VENV_PY}|" .env
+else
+  echo "PYTHON_BIN=${VENV_PY}" >> .env
+fi
 
 # 6. Migrate + seed
 log "Step 6/9: Run migrations & seeders"
@@ -213,4 +230,4 @@ echo "🔧 Tools:"
 echo "   - Restart queue: systemctl restart karsa-queue"
 echo "   - Logs queue:    tail -f /var/log/karsa-queue.log"
 echo "   - Logs Laravel:  tail -f ${PROJECT_DIR}/storage/logs/laravel-*.log"
-echo "   - Update code:   cd ${PROJECT_DIR} && git pull && composer install --no-dev && php artisan migrate --force && php artisan config:cache && systemctl restart karsa-queue"
+echo "   - Update code:   cd ${PROJECT_DIR} && git pull && composer install --no-dev && .venv/bin/pip install -q -r requirements.txt && php artisan migrate --force && php artisan config:cache && systemctl restart karsa-queue"

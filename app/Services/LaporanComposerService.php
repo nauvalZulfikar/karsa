@@ -157,7 +157,8 @@ class LaporanComposerService
         file_put_contents($subsJson,     json_encode($stringSubs,         JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         $cmd = sprintf(
-            'python "%s" --template "%s" --output "%s" --composed-file "%s" --string-subs-file "%s" 2>&1',
+            '%s "%s" --template "%s" --output "%s" --composed-file "%s" --string-subs-file "%s" 2>&1',
+            config('services.python.bin', 'python3'),
             base_path('scripts/laporan_compose_template.py'),
             $templatePath,
             $absPath,

@@ -45,4 +45,11 @@ return [
         'api_key' => env('OPENAI_API_KEY', ''),
     ],
 
+    // Python interpreter used by helper scripts (OCR render, laporan renderer/composer).
+    // Defaults to `python3`. On prod set PYTHON_BIN to a venv path, e.g.
+    // PYTHON_BIN=/root/projects/karta/.venv/bin/python
+    'python' => [
+        'bin' => env('PYTHON_BIN', 'python3'),
+    ],
+
 ];

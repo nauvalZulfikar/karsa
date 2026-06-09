@@ -58,10 +58,11 @@ class PdfOcrService
             throw new \RuntimeException("Python helper missing: {$script}");
         }
 
-        $cmd = sprintf('python "%s" "%s" %d 2>&1', $script, $pdfPath, $maxPages);
+        $python = config('services.python.bin', 'python3');
+        $cmd = sprintf('%s "%s" "%s" %d 2>&1', $python, $script, $pdfPath, $maxPages);
         $output = shell_exec($cmd);
         if (!$output) {
-            throw new \RuntimeException("Python OCR render returned empty. Cek `python` di PATH + `pip install pymupdf`.");
+            throw new \RuntimeException("Python OCR render returned empty. Cek `{$python}` di PATH + `pip install pymupdf`.");
         }
 
         $lines = array_filter(array_map('trim', explode("\n", $output)), fn ($l) => $l !== '');

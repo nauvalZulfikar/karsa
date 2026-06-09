@@ -420,7 +420,8 @@ print(json.dumps(candidates))
 PY;
         $tmpScript = tempnam(sys_get_temp_dir(), 'jadwal_') . '.py';
         file_put_contents($tmpScript, $script);
-        $output = trim((string) shell_exec(sprintf('python "%s" "%s" 2>&1', $tmpScript, $pdfPath)));
+        $python = config('services.python.bin', 'python3');
+        $output = trim((string) shell_exec(sprintf('%s "%s" "%s" 2>&1', $python, $tmpScript, $pdfPath)));
         @unlink($tmpScript);
 
         $pages = json_decode($output, true);
@@ -442,7 +443,8 @@ print(base64.b64encode(pix.tobytes("png")).decode("ascii"))
 PY;
         $tmpScript = tempnam(sys_get_temp_dir(), 'render_') . '.py';
         file_put_contents($tmpScript, $script);
-        $output = trim((string) shell_exec(sprintf('python "%s" "%s" %d 2>&1', $tmpScript, $pdfPath, $pageIndex)));
+        $python = config('services.python.bin', 'python3');
+        $output = trim((string) shell_exec(sprintf('%s "%s" "%s" %d 2>&1', $python, $tmpScript, $pdfPath, $pageIndex)));
         @unlink($tmpScript);
 
         return !empty($output) && strlen($output) > 1000 ? $output : null;
