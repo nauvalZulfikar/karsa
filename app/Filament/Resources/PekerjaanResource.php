@@ -161,7 +161,23 @@ class PekerjaanResource extends Resource
                         Forms\Components\TextInput::make('no_spk')
                             ->label('Nomor SPK')
                             ->nullable()
-                            ->maxLength(150),
+                            ->maxLength(150)
+                            ->rule(function (callable $get, ?\App\Models\Pekerjaan $record) {
+                                return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                    if (blank($value)) {
+                                        return; // No SPK boleh kosong; unik hanya berlaku kalau diisi.
+                                    }
+                                    $bentrok = \App\Models\Pekerjaan::query()
+                                        ->where('no_spk', $value)
+                                        ->where('bidang_id', $get('bidang_id'))
+                                        ->where('tahun_anggaran', $get('tahun_anggaran'))
+                                        ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
+                                        ->exists();
+                                    if ($bentrok) {
+                                        $fail('Nomor SPK ini sudah dipakai untuk Bidang dan Tahun Anggaran yang sama. Ganti No SPK, Bidang, atau Tahun.');
+                                    }
+                                };
+                            }),
 
                         Forms\Components\DatePicker::make('tanggal_spk')
                             ->label('Tanggal SPK')
