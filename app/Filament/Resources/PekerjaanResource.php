@@ -167,14 +167,17 @@ class PekerjaanResource extends Resource
                                     if (blank($value)) {
                                         return; // No SPK boleh kosong; unik hanya berlaku kalau diisi.
                                     }
-                                    $bentrok = \App\Models\Pekerjaan::query()
+                                    // withTrashed: unique index DB ikut menghitung baris yang sudah
+                                    // di-soft-delete, jadi validasi harus ikut juga — kalau tidak,
+                                    // validasi lolos tapi DB tetap melempar 500.
+                                    $bentrok = \App\Models\Pekerjaan::withTrashed()
                                         ->where('no_spk', $value)
                                         ->where('bidang_id', $get('bidang_id'))
                                         ->where('tahun_anggaran', $get('tahun_anggaran'))
                                         ->when($record, fn ($q) => $q->whereKeyNot($record->getKey()))
                                         ->exists();
                                     if ($bentrok) {
-                                        $fail('Nomor SPK ini sudah dipakai untuk Bidang dan Tahun Anggaran yang sama. Ganti No SPK, Bidang, atau Tahun.');
+                                        $fail('Kombinasi Nomor SPK + Bidang + Tahun Anggaran ini sudah dipakai (termasuk data yang sudah dihapus/diarsipkan). Ganti No SPK, Bidang, atau Tahun.');
                                     }
                                 };
                             }),
