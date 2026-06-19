@@ -52,7 +52,11 @@ class KanbanPekerjaanWidget extends Widget
 
     public function getViewData(): array
     {
-        $query = Pekerjaan::with(['perusahaan', 'bidang', 'statusPekerjaan', 'milestones.checklistItems'])
+        $query = Pekerjaan::with([
+                'perusahaan', 'bidang', 'statusPekerjaan', 'jenisPekerjaan',
+                'milestones.checklistItems',
+                'personil.tenagaAhli', 'terminPembayaran', 'dokumen',
+            ])
             ->where('tahun_anggaran', date('Y'));
 
         if ($this->filterBidangId) {
@@ -88,9 +92,33 @@ class KanbanPekerjaanWidget extends Widget
                 'tanggal_mulai'  => $p->tanggal_mulai?->format('d M Y'),
                 'tanggal_akhir'  => $p->tanggal_akhir?->format('d M Y'),
                 'hari_kerja'     => $p->hari_kerja,
-                'jumlah_personil'=> $p->personil()->count(),
-                'jumlah_termin'  => $p->terminPembayaran()->count(),
-                'jumlah_milestone'=> $p->milestones()->count(),
+                // Detail tambahan untuk accordion "Info & Progres"
+                'jenis_pekerjaan'=> $p->jenisPekerjaan?->nama,
+                'lokasi'         => $p->lokasi,
+                'tahun_anggaran' => $p->tahun_anggaran,
+                'satuan_waktu'   => $p->satuan_waktu,
+                'tanggal_spk'    => $p->tanggal_spk?->format('d M Y'),
+                'tanggal_spmk'   => $p->tanggal_spmk?->format('d M Y'),
+                'catatan'        => $p->catatan,
+                'personil_list'  => $p->personil->map(fn ($pp) => [
+                    'nama'    => $pp->tenagaAhli?->nama ?? '-',
+                    'jabatan' => $pp->jabatan_kontrak ?: '-',
+                ])->toArray(),
+                'termin_list'    => $p->terminPembayaran->map(fn ($t) => [
+                    'nomor'  => $t->nomor_termin,
+                    'nama'   => $t->nama_termin ?: ('Termin ' . $t->nomor_termin),
+                    'persen' => $t->persen_progres_syarat !== null ? rtrim(rtrim(number_format((float) $t->persen_progres_syarat, 2, ',', '.'), '0'), ',') . '%' : '-',
+                    'nilai'  => 'Rp ' . number_format((float) $t->nilai_termin, 0, ',', '.'),
+                    'status' => $t->status_label,
+                ])->toArray(),
+                'dokumen_list'   => $p->dokumen->map(fn ($d) => [
+                    'tipe'     => $d->tipe_label,
+                    'nama'     => $d->nama_dokumen ?: ($d->file_original_name ?? '-'),
+                    'versi'    => $d->versi ? ('v' . $d->versi) : '',
+                ])->toArray(),
+                'jumlah_personil'=> $p->personil->count(),
+                'jumlah_termin'  => $p->terminPembayaran->count(),
+                'jumlah_milestone'=> $p->milestones->count(),
                 'status_label'   => $p->statusPekerjaan?->nama ?? ($p->status_waktu ?? 'Belum Mulai'),
                 'url_detail'     => PekerjaanResource::getUrl('view', ['record' => $p->id]),
                 'url_edit'       => PekerjaanResource::getUrl('edit', ['record' => $p->id]),

@@ -260,6 +260,58 @@
             color: var(--km-text);
             font-weight: 500;
         }
+        /* Accordion (Info & Progres) */
+        .km-acc {
+            border: 1px solid var(--km-border);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            background: var(--km-card-bg);
+            overflow: hidden;
+        }
+        .km-acc > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 11px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--km-text);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .km-acc > summary::-webkit-details-marker { display: none; }
+        .km-acc > summary::after {
+            content: '▸';
+            color: var(--km-muted);
+            font-size: 12px;
+            transition: transform 0.15s ease;
+        }
+        .km-acc[open] > summary::after { transform: rotate(90deg); }
+        .km-acc > summary .km-acc-badge {
+            font-size: 11px;
+            font-weight: 600;
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.12);
+            border-radius: 999px;
+            padding: 1px 8px;
+            margin-left: auto;
+            margin-right: 10px;
+        }
+        .km-acc-body { padding: 4px 16px 14px; }
+        .km-acc-list { display: flex; flex-direction: column; gap: 6px; }
+        .km-acc-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 12px;
+            color: var(--km-text);
+            padding: 6px 0;
+            border-top: 1px solid var(--km-border);
+        }
+        .km-acc-row:first-child { border-top: none; }
+        .km-acc-empty { font-size: 12px; color: var(--km-muted); padding: 4px 0; }
         .kanban-modal-progress {
             background: var(--km-border);
             height: 10px;
@@ -458,25 +510,113 @@
                                 <div class="kanban-modal-count-label">Milestone</div>
                             </div>
                         </div>
-                        <div class="kanban-modal-grid">
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Bidang</span><span class="kanban-modal-value" x-text="activeCard?.bidang || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Vendor</span><span class="kanban-modal-value" x-text="activeCard?.vendor || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">No SPK</span><span class="kanban-modal-value" x-text="activeCard?.no_spk || '-'" style="font-size:11px;"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">No SPMK</span><span class="kanban-modal-value" x-text="activeCard?.no_spmk || '-'" style="font-size:11px;"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Pagu</span><span class="kanban-modal-value" x-text="activeCard?.nilai_pagu || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Kontrak</span><span class="kanban-modal-value" x-text="activeCard?.nilai_kontrak || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Mulai</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_mulai || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Akhir</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_akhir || '-'"></span></div>
-                            <div class="kanban-modal-field"><span class="kanban-modal-label">Hari Kerja</span><span class="kanban-modal-value" x-text="activeCard?.hari_kerja ? `${activeCard.hari_kerja} hari` : '-'"></span></div>
-                            <div class="kanban-modal-field">
-                                <span class="kanban-modal-label">Sisa Hari</span>
-                                <span class="kanban-modal-value">
-                                    <template x-if="activeCard?.sisa_hari === null || activeCard?.sisa_hari === undefined"><span>-</span></template>
-                                    <template x-if="activeCard?.sisa_hari < 0"><span style="color:#dc2626;">⚠ Lewat <span x-text="Math.abs(activeCard?.sisa_hari)"></span> hari</span></template>
-                                    <template x-if="activeCard?.sisa_hari >= 0"><span x-text="`${activeCard?.sisa_hari} hari`"></span></template>
-                                </span>
+                        {{-- Accordion: detail lengkap, collapsed biar ga kepanjangan --}}
+                        <details class="km-acc" open>
+                            <summary>Informasi Umum</summary>
+                            <div class="km-acc-body">
+                                <div class="kanban-modal-grid" style="margin-bottom:0;">
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Bidang</span><span class="kanban-modal-value" x-text="activeCard?.bidang || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Jenis Pekerjaan</span><span class="kanban-modal-value" x-text="activeCard?.jenis_pekerjaan || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Vendor</span><span class="kanban-modal-value" x-text="activeCard?.vendor || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Lokasi</span><span class="kanban-modal-value" x-text="activeCard?.lokasi || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Status</span><span class="kanban-modal-value" x-text="activeCard?.status_label || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Tahun Anggaran</span><span class="kanban-modal-value" x-text="activeCard?.tahun_anggaran || '-'"></span></div>
+                                </div>
                             </div>
-                        </div>
+                        </details>
+
+                        <details class="km-acc">
+                            <summary>SPK &amp; SPMK</summary>
+                            <div class="km-acc-body">
+                                <div class="kanban-modal-grid" style="margin-bottom:0;">
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">No SPK</span><span class="kanban-modal-value" x-text="activeCard?.no_spk || '-'" style="font-size:11px;"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Tanggal SPK</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_spk || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">No SPMK</span><span class="kanban-modal-value" x-text="activeCard?.no_spmk || '-'" style="font-size:11px;"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Tanggal SPMK</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_spmk || '-'"></span></div>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="km-acc">
+                            <summary>Nilai &amp; Waktu</summary>
+                            <div class="km-acc-body">
+                                <div class="kanban-modal-grid" style="margin-bottom:0;">
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Pagu</span><span class="kanban-modal-value" x-text="activeCard?.nilai_pagu || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Nilai Kontrak</span><span class="kanban-modal-value" x-text="activeCard?.nilai_kontrak || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Mulai</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_mulai || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Akhir</span><span class="kanban-modal-value" x-text="activeCard?.tanggal_akhir || '-'"></span></div>
+                                    <div class="kanban-modal-field"><span class="kanban-modal-label">Durasi</span><span class="kanban-modal-value" x-text="activeCard?.hari_kerja ? `${activeCard.hari_kerja} ${activeCard.satuan_waktu || 'hari'}` : '-'"></span></div>
+                                    <div class="kanban-modal-field">
+                                        <span class="kanban-modal-label">Sisa Hari</span>
+                                        <span class="kanban-modal-value">
+                                            <template x-if="activeCard?.sisa_hari === null || activeCard?.sisa_hari === undefined"><span>-</span></template>
+                                            <template x-if="activeCard?.sisa_hari < 0"><span style="color:#dc2626;">⚠ Lewat <span x-text="Math.abs(activeCard?.sisa_hari)"></span> hari</span></template>
+                                            <template x-if="activeCard?.sisa_hari >= 0"><span x-text="`${activeCard?.sisa_hari} hari`"></span></template>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="km-acc">
+                            <summary>Personil <span class="km-acc-badge" x-text="activeCard?.jumlah_personil ?? 0"></span></summary>
+                            <div class="km-acc-body">
+                                <template x-if="!activeCard?.personil_list || activeCard.personil_list.length === 0">
+                                    <div class="km-acc-empty">Belum ada personil.</div>
+                                </template>
+                                <div class="km-acc-list">
+                                    <template x-for="(pp, i) in (activeCard?.personil_list || [])" :key="i">
+                                        <div class="km-acc-row">
+                                            <span x-text="pp.nama"></span>
+                                            <span style="color:var(--km-muted);" x-text="pp.jabatan"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="km-acc">
+                            <summary>Termin Pembayaran <span class="km-acc-badge" x-text="activeCard?.jumlah_termin ?? 0"></span></summary>
+                            <div class="km-acc-body">
+                                <template x-if="!activeCard?.termin_list || activeCard.termin_list.length === 0">
+                                    <div class="km-acc-empty">Belum ada termin pembayaran.</div>
+                                </template>
+                                <div class="km-acc-list">
+                                    <template x-for="(t, i) in (activeCard?.termin_list || [])" :key="i">
+                                        <div class="km-acc-row">
+                                            <span><span x-text="t.nama"></span> <span style="color:var(--km-muted);font-size:11px;" x-text="`· ${t.persen} · ${t.status}`"></span></span>
+                                            <span style="font-weight:600;" x-text="t.nilai"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="km-acc">
+                            <summary>Dokumen <span class="km-acc-badge" x-text="activeCard?.dokumen_list?.length ?? 0"></span></summary>
+                            <div class="km-acc-body">
+                                <template x-if="!activeCard?.dokumen_list || activeCard.dokumen_list.length === 0">
+                                    <div class="km-acc-empty">Belum ada dokumen.</div>
+                                </template>
+                                <div class="km-acc-list">
+                                    <template x-for="(d, i) in (activeCard?.dokumen_list || [])" :key="i">
+                                        <div class="km-acc-row">
+                                            <span><span style="color:var(--km-muted);font-size:11px;text-transform:uppercase;" x-text="d.tipe"></span> <span x-text="d.nama"></span></span>
+                                            <span style="color:var(--km-muted);" x-text="d.versi"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </details>
+
+                        <template x-if="activeCard?.catatan">
+                            <details class="km-acc">
+                                <summary>Catatan</summary>
+                                <div class="km-acc-body">
+                                    <div style="font-size:13px;color:var(--km-text);white-space:pre-wrap;" x-text="activeCard?.catatan"></div>
+                                </div>
+                            </details>
+                        </template>
                     </div>
 
                     {{-- TAB: Milestone Checklist --}}
