@@ -115,6 +115,7 @@ class KanbanPekerjaanWidget extends Widget
                     'tipe'     => $d->tipe_label,
                     'nama'     => $d->nama_dokumen ?: ($d->file_original_name ?? '-'),
                     'versi'    => $d->versi ? ('v' . $d->versi) : '',
+                    'url'      => route('dokumen.download', $d->id),
                 ])->toArray(),
                 'jumlah_personil'=> $p->personil->count(),
                 'jumlah_termin'  => $p->terminPembayaran->count(),

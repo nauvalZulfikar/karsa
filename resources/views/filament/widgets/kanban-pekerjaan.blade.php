@@ -312,6 +312,18 @@
         }
         .km-acc-row:first-child { border-top: none; }
         .km-acc-empty { font-size: 12px; color: var(--km-muted); padding: 4px 0; }
+        .km-acc-dl {
+            flex-shrink: 0;
+            font-size: 11px;
+            font-weight: 600;
+            color: #10b981;
+            text-decoration: none;
+            white-space: nowrap;
+            padding: 2px 8px;
+            border: 1px solid #10b981;
+            border-radius: 6px;
+        }
+        .km-acc-dl:hover { background: #10b981; color: #fff; }
         .kanban-modal-progress {
             background: var(--km-border);
             height: 10px;
@@ -601,8 +613,8 @@
                                 <div class="km-acc-list">
                                     <template x-for="(d, i) in (activeCard?.dokumen_list || [])" :key="i">
                                         <div class="km-acc-row">
-                                            <span><span style="color:var(--km-muted);font-size:11px;text-transform:uppercase;" x-text="d.tipe"></span> <span x-text="d.nama"></span></span>
-                                            <span style="color:var(--km-muted);" x-text="d.versi"></span>
+                                            <span><span style="color:var(--km-muted);font-size:11px;text-transform:uppercase;" x-text="d.tipe"></span> <span x-text="d.nama"></span> <span style="color:var(--km-muted);" x-text="d.versi"></span></span>
+                                            <a :href="d.url" target="_blank" class="km-acc-dl">⬇ Unduh</a>
                                         </div>
                                     </template>
                                 </div>
