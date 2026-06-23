@@ -919,6 +919,7 @@ class AiChatService
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         try {
             $parser = app(\App\Services\KickoffParserService::class);
             return ['ok' => true, 'data' => $parser->parse($path)];
@@ -931,6 +932,7 @@ class AiChatService
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         try {
             $parser = app(\App\Services\KontrakParserService::class);
             return ['ok' => true, 'data' => $parser->parse($path)];
@@ -943,6 +945,7 @@ class AiChatService
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         try {
             $parser = app(\App\Services\RabParserService::class);
             return ['ok' => true, 'data' => $parser->parse($path)];
@@ -980,6 +983,32 @@ class AiChatService
         $candidate2 = storage_path('app/public/' . ltrim($raw, '/'));
         if (file_exists($candidate2)) return $candidate2;
         return null;
+    }
+
+    /**
+     * PDF hasil scan yang OCR-nya masih jalan di background (OcrChatUpload job)?
+     * Kalau ya, parse tool TIDAK boleh OCR sinkron di request web — itu yang
+     * dulu nahan worker 240s+ → 504. Balikin status "diproses", suruh ulang.
+     */
+    private function ocrPending(string $path): bool
+    {
+        $u = \App\Models\ChatUpload::where('abs_path', $path)->first();
+        if (!$u || !$u->is_scanned_pdf) return false;            // bukan scan → parser jalan normal
+        if (mb_strlen((string) $u->ocr_text) >= 200) return false; // OCR kelar → cache hangat
+        if (\Illuminate\Support\Facades\Cache::get(\App\Jobs\OcrChatUpload::doneKey($u->id))) {
+            return false;                                         // job kelar (teks tipis/gagal) → biar parser munculin error asli
+        }
+        return true;                                              // scan, OCR masih jalan
+    }
+
+    private function ocrPendingResponse(): array
+    {
+        return [
+            'ok'      => false,
+            'status'  => 'processing',
+            'pesan'   => 'Dokumen ini hasil scan dan teksnya sedang dibaca (OCR) di background. '
+                       . 'Tunggu ~10-30 detik lalu minta lagi — jangan OCR ulang sekarang.',
+        ];
     }
 
     private function toolDashboardStats(): array
@@ -1930,6 +1959,7 @@ class AiChatService
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         // Pakai KontrakParserService (OpenAI prompt cukup general — bisa di-tune nanti)
         try {
             $parser = app(\App\Services\KontrakParserService::class);
@@ -2157,6 +2187,11 @@ class AiChatService
                 continue;
             }
 
+            if ($this->ocrPending($path)) {
+                $results[] = ['type' => $type, 'file' => basename($path)] + $this->ocrPendingResponse();
+                continue;
+            }
+
             // Dispatch parser based on type. Each parser is synchronous but we run them in sequence
             // BUT release the HTTP wait via parallel curl_multi.
             // Simple approach: use array_map dengan parallel HTTP via Http::pool (only for OpenAI calls).
@@ -2219,16 +2254,31 @@ class AiChatService
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+
+        $upload = \App\Models\ChatUpload::where('abs_path', $path)->first();
+
+        // Cache OCR sudah ada → balikin langsung, tanpa Vision ulang.
+        if ($upload && mb_strlen((string) $upload->ocr_text) >= 200) {
+            return [
+                'ok'          => true,
+                'text_length' => mb_strlen($upload->ocr_text),
+                'text_preview' => mb_substr($upload->ocr_text, 0, 1500),
+                'full_text'   => $upload->ocr_text,
+                'pesan'       => 'OCR (dari cache). Lanjut parse_* kalau perlu structured data.',
+            ];
+        }
+
+        // Ada record chat upload → OCR berat jalan di queue, jangan nahan worker web.
+        if ($upload) {
+            if (!$this->ocrPending($path)) {
+                \App\Jobs\OcrChatUpload::dispatch($upload->id, (int) ($input['max_pages'] ?? 8));
+            }
+            return $this->ocrPendingResponse();
+        }
+
+        // Tidak ada record (file bukan dari chat upload) → OCR sinkron (jarang).
         try {
-            $ocr = app(\App\Services\PdfOcrService::class);
-            $text = $ocr->ocr($path, (int) ($input['max_pages'] ?? 5));
-
-            // Cache hasil OCR ke chat_uploads kalau record ada
-            \App\Models\ChatUpload::where('abs_path', $path)->update([
-                'is_scanned_pdf' => true,
-                'ocr_text' => mb_substr($text, 0, 10000),
-            ]);
-
+            $text = app(\App\Services\PdfOcrService::class)->ocr($path, (int) ($input['max_pages'] ?? 5));
             return [
                 'ok' => true,
                 'text_length' => mb_strlen($text),

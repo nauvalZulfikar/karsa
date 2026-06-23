@@ -40,7 +40,9 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Harus > timeout job terlama (OcrChatUpload = 600s) supaya job OCR yang
+            // masih jalan nggak di-reserve ulang worker lain → double-run.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 700),
             'after_commit' => false,
         ],
 

@@ -157,34 +157,7 @@ class AiChatWidget extends Component
         $this->validate();
         if (!$this->uploadedFile) return;
 
-        $name = $this->uploadedFile->getClientOriginalName();
-        $stored = $this->uploadedFile->store('ai_chat_uploads', 'local');
-        $abs = Storage::disk('local')->path($stored);
-        $mime = $this->uploadedFile->getMimeType();
-        $size = $this->uploadedFile->getSize();
-
-        \App\Models\ChatUpload::create([
-            'user_id' => auth()->id(),
-            'original_name' => $name,
-            'abs_path' => $abs,
-            'mime' => $mime,
-            'size_bytes' => $size,
-        ]);
-
-        if (str_contains((string) $mime, 'pdf') || str_ends_with(strtolower($name), '.pdf')) {
-            try {
-                $parser = new \Smalot\PdfParser\Parser();
-                $pdf = $parser->parseFile($abs);
-                $text = trim($pdf->getText());
-                \App\Models\ChatUpload::where('abs_path', $abs)->update([
-                    'ocr_text' => mb_substr($text, 0, 15000),
-                    'is_scanned_pdf' => mb_strlen($text) < 100,
-                ]);
-            } catch (\Throwable) {
-            }
-        }
-
-        $this->attachments[] = ['name' => $name, 'path' => $abs];
+        $this->attachments[] = $this->ingestUpload($this->uploadedFile);
         $this->uploadedFile = null;
     }
 
@@ -194,38 +167,53 @@ class AiChatWidget extends Component
         $this->isBatchUploading = true;
 
         foreach ($this->uploadedFiles as $file) {
-            $name = $file->getClientOriginalName();
-            $stored = $file->store('ai_chat_uploads', 'local');
-            $abs = Storage::disk('local')->path($stored);
-            $mime = $file->getMimeType();
-            $size = $file->getSize();
-
-            \App\Models\ChatUpload::create([
-                'user_id' => auth()->id(),
-                'original_name' => $name,
-                'abs_path' => $abs,
-                'mime' => $mime,
-                'size_bytes' => $size,
-            ]);
-
-            if (str_contains((string) $mime, 'pdf') || str_ends_with(strtolower($name), '.pdf')) {
-                try {
-                    $parser = new \Smalot\PdfParser\Parser();
-                    $pdf = $parser->parseFile($abs);
-                    $text = trim($pdf->getText());
-                    \App\Models\ChatUpload::where('abs_path', $abs)->update([
-                        'ocr_text' => mb_substr($text, 0, 15000),
-                        'is_scanned_pdf' => mb_strlen($text) < 100,
-                    ]);
-                } catch (\Throwable) {
-                }
-            }
-
-            $this->attachments[] = ['name' => $name, 'path' => $abs];
+            $this->attachments[] = $this->ingestUpload($file);
         }
 
         $this->uploadedFiles = [];
         $this->isBatchUploading = false;
+    }
+
+    /**
+     * Simpan file, catat ChatUpload, extract teks-layer cepat (Smalot).
+     * Kalau PDF hasil scan → OCR berat dilempar ke queue (OcrChatUpload) supaya
+     * request web nggak nahan worker. Return ['name','path'] buat attachments.
+     */
+    private function ingestUpload($file): array
+    {
+        $name   = $file->getClientOriginalName();
+        $stored = $file->store('ai_chat_uploads', 'local');
+        $abs    = Storage::disk('local')->path($stored);
+        $mime   = $file->getMimeType();
+        $size   = $file->getSize();
+
+        $upload = \App\Models\ChatUpload::create([
+            'user_id'       => auth()->id(),
+            'original_name' => $name,
+            'abs_path'      => $abs,
+            'mime'          => $mime,
+            'size_bytes'    => $size,
+        ]);
+
+        if (str_contains((string) $mime, 'pdf') || str_ends_with(strtolower($name), '.pdf')) {
+            $text = '';
+            try {
+                $text = trim((new \Smalot\PdfParser\Parser())->parseFile($abs)->getText());
+            } catch (\Throwable) {
+            }
+
+            $isScanned = mb_strlen($text) < 100;
+            $upload->update([
+                'ocr_text'       => mb_substr($text, 0, 15000),
+                'is_scanned_pdf' => $isScanned,
+            ]);
+
+            if ($isScanned) {
+                \App\Jobs\OcrChatUpload::dispatch($upload->id);
+            }
+        }
+
+        return ['name' => $name, 'path' => $abs];
     }
 
     public function removeAttachment(int $index): void
