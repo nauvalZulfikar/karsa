@@ -13,13 +13,18 @@ use Illuminate\Support\Facades\Http;
 class AiChatService
 {
     private string $apiKey;
-    private string $model  = 'gpt-4o-mini';
-    private string $apiUrl = 'https://api.openai.com/v1/chat/completions';
+    private string $model;
+    private string $apiUrl;
     private array $lastParseAggregated = [];
+    private array $lastParseTruth = []; // G3b: field kritis hasil parse, untuk cross-check create
+    private bool $primaryDown = false;  // FASE C: primary sudah ketahuan mati di sesi ini → langsung fallback
 
     public function __construct()
     {
-        $this->apiKey = config('services.openai.api_key', '');
+        // FASE 0: backend dari config services.llm (default OpenAI). base_url root '/v1' + '/chat/completions'.
+        $this->apiKey = config('services.llm.api_key', '');
+        $this->model  = config('services.llm.model', 'gpt-4o-mini');
+        $this->apiUrl = rtrim(config('services.llm.base_url', 'https://api.openai.com/v1'), '/') . '/chat/completions';
     }
 
     private function storeAggregated(array $data): void
@@ -40,6 +45,126 @@ class AiChatService
         return $cached;
     }
 
+    // ============================================================
+    // FASE 1 GUARDRAILS (G1–G7) — helper
+    // ============================================================
+
+    /** G7: buang cache parse setelah proyek dibuat, biar tidak nyangkut ke proyek berikutnya. */
+    private function clearAggregated(): void
+    {
+        cache()->forget('ai_parse_aggregated_' . auth()->id());
+        cache()->forget('ai_parse_truth_' . auth()->id());
+        $this->lastParseAggregated = [];
+        $this->lastParseTruth = [];
+    }
+
+    /** G1: tool selain read-only dianggap "write" → tidak boleh diulang identik dalam 1 sesi. */
+    private function isWriteTool(string $name): bool
+    {
+        static $readOnly = [
+            'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_laporan_harian',
+            'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'get_my_pekerjaan',
+            'search_audit_log', 'list_perusahaan', 'list_uploaded_files', 'find_uploaded_file',
+            'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
+            'parse_multiple_docs', 'ocr_pdf', 'cross_check_rab_vs_kontrak',
+        ];
+        return !in_array($name, $readOnly, true);
+    }
+
+    /** G2: nilai_kontrak tidak boleh melebihi nilai_pagu (anti ketuker). */
+    private function assertNilaiSane(array $input): ?array
+    {
+        $pagu    = $input['nilai_pagu'] ?? null;
+        $kontrak = $input['nilai_kontrak'] ?? null;
+        if ($pagu !== null && $kontrak !== null && (float) $kontrak > (float) $pagu) {
+            return ['error' => "Ditolak: nilai_kontrak (Rp " . number_format((float) $kontrak, 0, ',', '.')
+                . ") > nilai_pagu (Rp " . number_format((float) $pagu, 0, ',', '.')
+                . "). Pagu = anggaran APBD (lebih besar), nilai kontrak = hasil nego (lebih kecil). Kemungkinan ketukar — cek dokumen."];
+        }
+        return null;
+    }
+
+    /** G3a (sanity) + G3b (cocokkan vs hasil parse). Return error array atau null kalau lolos. */
+    private function assertFieldKritisValid(array $input): ?array
+    {
+        // --- G3a: sanity dasar ---
+        $nama = trim((string) ($input['nama_pekerjaan'] ?? ''));
+        if ($nama === '' || mb_strlen($nama) < 4 || preg_match('/^(string|contoh|example|\.\.\.|n\/?a|null|nama_pekerjaan)$/i', $nama)) {
+            return ['error' => "Ditolak: nama_pekerjaan kosong/placeholder ('{$nama}'). Ambil nama asli dari dokumen, JANGAN tebak."];
+        }
+        $thisYear = (int) date('Y');
+        foreach (['tanggal_spk', 'tanggal_mulai', 'tanggal_akhir'] as $tf) {
+            if (empty($input[$tf])) continue;
+            $ts = strtotime((string) $input[$tf]);
+            if ($ts === false) {
+                return ['error' => "Ditolak: {$tf} '{$input[$tf]}' bukan tanggal valid."];
+            }
+            $y = (int) date('Y', $ts);
+            if ($y < 2015 || $y > $thisYear + 1) {
+                return ['error' => "Ditolak: {$tf} '{$input[$tf]}' di luar rentang wajar (2015–" . ($thisYear + 1) . "). Kemungkinan salah baca/tebak."];
+            }
+        }
+        foreach (['nilai_pagu', 'nilai_kontrak'] as $nf) {
+            if (array_key_exists($nf, $input) && $input[$nf] !== null && (float) $input[$nf] <= 0) {
+                return ['error' => "Ditolak: {$nf} harus > 0 (dapat '{$input[$nf]}')."];
+            }
+        }
+
+        // --- G3b: cocokkan vs kebenaran dokumen (kalau ada hasil parse di sesi ini) ---
+        $truth = $this->loadParseTruth();
+        if (!empty($truth)) {
+            if (!empty($truth['no_spk']) && !empty($input['no_spk'])
+                && $this->normSpk((string) $input['no_spk']) !== $this->normSpk((string) $truth['no_spk'])) {
+                return ['error' => "Ditolak (anti-ngarang): no_spk '{$input['no_spk']}' beda dengan dokumen ('{$truth['no_spk']}'). Pakai yang dari dokumen. Kalau memang sengaja, panggil ulang dengan force_create=true."];
+            }
+            foreach (['nilai_kontrak', 'nilai_pagu'] as $nf) {
+                if (isset($truth[$nf], $input[$nf]) && $truth[$nf] !== null && $input[$nf] !== null
+                    && abs((float) $input[$nf] - (float) $truth[$nf]) > 1) {
+                    return ['error' => "Ditolak (anti-ngarang): {$nf} (" . number_format((float) $input[$nf], 0, ',', '.')
+                        . ") beda dengan dokumen (" . number_format((float) $truth[$nf], 0, ',', '.')
+                        . "). Pakai angka dokumen, atau force_create=true kalau sengaja."];
+                }
+            }
+            foreach (['tanggal_spk', 'tanggal_mulai', 'tanggal_akhir'] as $tf) {
+                if (!empty($truth[$tf]) && !empty($input[$tf])
+                    && substr((string) $input[$tf], 0, 10) !== substr((string) $truth[$tf], 0, 10)) {
+                    return ['error' => "Ditolak (anti-ngarang): {$tf} '{$input[$tf]}' beda dengan dokumen ('{$truth[$tf]}'). Pakai tanggal dokumen, atau force_create=true kalau sengaja."];
+                }
+            }
+        }
+        return null;
+    }
+
+    /** G3b: rekam field kritis hasil parse. first-non-null menang (gabung lintas dokumen). */
+    private function captureParseTruth(string $type, array $data): void
+    {
+        $src = $data['pekerjaan'] ?? $data; // kontrak nested di 'pekerjaan'; KAK/RAB flat
+        $map = [];
+        foreach (['no_spk', 'no_spmk', 'nama_pekerjaan', 'tanggal_spk', 'tanggal_mulai', 'tanggal_akhir', 'nilai_pagu', 'nilai_kontrak'] as $f) {
+            if (isset($src[$f]) && $src[$f] !== null && $src[$f] !== '') $map[$f] = $src[$f];
+        }
+        if (empty($map['nilai_kontrak']) && !empty($data['total_kontrak'])) $map['nilai_kontrak'] = $data['total_kontrak']; // RAB
+        if (empty($map)) return;
+
+        $truth = $this->loadParseTruth();
+        foreach ($map as $k => $v) {
+            if (!isset($truth[$k]) || $truth[$k] === null || $truth[$k] === '') $truth[$k] = $v;
+        }
+        $this->lastParseTruth = $truth;
+        cache()->put('ai_parse_truth_' . auth()->id(), $truth, now()->addMinutes(30));
+    }
+
+    private function loadParseTruth(): array
+    {
+        if (!empty($this->lastParseTruth)) return $this->lastParseTruth;
+        return cache()->get('ai_parse_truth_' . auth()->id(), []);
+    }
+
+    private function normSpk(string $s): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', trim($s)));
+    }
+
     public function chat(array $messages): string
     {
         if (empty($this->apiKey)) {
@@ -47,7 +172,7 @@ class AiChatService
         }
 
         $history = $this->buildHistory($messages);
-        $tools   = $this->getToolDefinitions();
+        $tools   = $this->toolsForRequest($history);
         $system  = $this->getSystemPrompt();
 
         // Prepend system message
@@ -70,6 +195,9 @@ class AiChatService
         // (AI sering drop URL atau salah format, jadi kita jamin link selalu muncul)
         $downloads = [];
 
+        // G1 anti-loop: tool tulis dengan argumen identik tidak dieksekusi 2x dalam 1 sesi chat.
+        $executedWrites = [];
+
         while (($response['choices'][0]['finish_reason'] ?? '') === 'tool_calls' && $iterations < $maxIterations) {
             // Soft timeout guard — kalau total udah > 4 menit, stop loop
             if ((microtime(true) - $startTime) > $hardTimeoutSec) {
@@ -85,7 +213,21 @@ class AiChatService
             foreach ($assistantMsg['tool_calls'] ?? [] as $toolCall) {
                 $name      = $toolCall['function']['name'];
                 $input     = json_decode($toolCall['function']['arguments'], true) ?? [];
-                $result    = $this->executeTool($name, $input);
+
+                // G1: blokir tool tulis yang diulang persis (nama+argumen sama) dalam sesi ini.
+                $sig = $name . ':' . md5(json_encode($input));
+                if ($this->isWriteTool($name) && isset($executedWrites[$sig])) {
+                    $result = [
+                        'ok'     => false,
+                        'status' => 'duplicate_blocked',
+                        'pesan'  => "Aksi '{$name}' dengan data yang sama persis sudah dijalankan barusan — TIDAK diulang (anti-loop). Pakai hasil sebelumnya; jangan panggil lagi.",
+                    ];
+                } else {
+                    $result = $this->executeTool($name, $input);
+                    if ($this->isWriteTool($name)) {
+                        $executedWrites[$sig] = true;
+                    }
+                }
 
                 // Capture download links from generators / create_pekerjaan
                 if (is_array($result)) {
@@ -148,17 +290,61 @@ class AiChatService
 
     private function callOpenAI(array $messages, array $tools): array
     {
+        $fallbackOk = config('services.llm.driver', 'openai') !== 'openai'
+            && config('services.llm.fallback', true)
+            && config('services.llm.fallback_key');
+
+        // Primary sudah ketahuan mati di sesi ini → langsung fallback, jangan buang 6s nyoba ulang.
+        if ($this->primaryDown && $fallbackOk) {
+            return $this->callFallback($messages, $tools);
+        }
+
+        try {
+            return $this->requestLlm($messages, $tools, $this->apiUrl, $this->apiKey, $this->model);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            if ($fallbackOk) {
+                $this->primaryDown = true;
+                logger()->warning("LLM failover: backend utama tak terjangkau ({$e->getMessage()}) → fallback ke OpenAI.");
+                return $this->callFallback($messages, $tools);
+            }
+            throw new \RuntimeException(
+                "Gagal hubungi backend AI setelah 3x percobaan ({$e->getMessage()}). " .
+                "Cek koneksi / Ollama, atau coba pakai VPN (ISP Indonesia kadang block api.openai.com)."
+            );
+        }
+    }
+
+    private function callFallback(array $messages, array $tools): array
+    {
+        try {
+            return $this->requestLlm(
+                $messages, $tools,
+                config('services.llm.fallback_url', 'https://api.openai.com/v1/chat/completions'),
+                config('services.llm.fallback_key'),
+                config('services.llm.fallback_model', 'gpt-4o-mini'),
+            );
+        } catch (\Throwable $e2) {
+            throw new \RuntimeException(
+                "Backend AI lokal mati dan fallback OpenAI juga gagal ({$e2->getMessage()}). " .
+                "Asisten AI sedang offline — coba lagi nanti."
+            );
+        }
+    }
+
+    /** Satu panggilan ke endpoint LLM (OpenAI-compatible). 3 retry backoff; lempar ConnectionException biar caller bisa failover. */
+    private function requestLlm(array $messages, array $tools, string $url, string $key, string $model): array
+    {
+        $timeout = (int) config('services.llm.timeout', 120);
         $lastError = null;
-        // 3 retry dengan backoff (2s, 4s) — handle network blip + slow connection
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             try {
-                $response = Http::timeout(120)         // total request timeout 2 menit
-                    ->connectTimeout(30)               // wait 30s to connect (Indo network bisa slow)
-                    ->retry(0)                         // we handle retry manually
-                    ->withToken($this->apiKey)
+                $response = Http::timeout($timeout)
+                    ->connectTimeout(30)
+                    ->retry(0)
+                    ->withToken($key)
                     ->withHeaders(['User-Agent' => 'Karta-AI/1.0'])
-                    ->post($this->apiUrl, [
-                        'model'       => $this->model,
+                    ->post($url, [
+                        'model'       => $model,
                         'max_tokens'  => 1024,
                         'messages'    => $messages,
                         'tools'       => $tools,
@@ -167,20 +353,17 @@ class AiChatService
 
                 if (!$response->successful()) {
                     $error = $response->json('error.message', $response->body());
-                    throw new \RuntimeException("OpenAI API: {$error}");
+                    throw new \RuntimeException("LLM API: {$error}");
                 }
 
                 return $response->json();
             } catch (\Illuminate\Http\Client\ConnectionException $e) {
                 $lastError = $e;
                 if ($attempt < 3) {
-                    sleep($attempt * 2); // 2s, then 4s
+                    sleep($attempt * 2); // 2s, 4s
                     continue;
                 }
-                throw new \RuntimeException(
-                    "Gagal hubungi OpenAI setelah 3x percobaan ({$e->getMessage()}). " .
-                    "Cek koneksi internet, atau coba pakai VPN — beberapa ISP Indonesia kadang throttle/block api.openai.com."
-                );
+                throw $e; // serahkan ke caller (failover handler)
             }
         }
 
@@ -192,6 +375,31 @@ class AiChatService
         $instansi = SystemSetting::get('nama_instansi', 'DPUTR Kabupaten Bandung');
         $tahun    = SystemSetting::get('tahun_anggaran_aktif', date('Y'));
         $userName = auth()->user()?->name ?? 'pengguna';
+
+        // FASE D: model lokal (Ollama/Qwen) lambat memproses prompt panjang tiap roundtrip.
+        // Pakai prompt RINGKAS + /no_think — aman karena aturan anti-loop/anti-ngarang sudah
+        // ditegakkan di KODE (guardrail G1-G8), bukan lagi cuma di prompt. OpenAI tetap pakai
+        // prompt penuh di bawah (perilaku teruji tidak berubah).
+        if (config('services.llm.driver', 'openai') === 'ollama') {
+            return "/no_think\n"
+                . "Kamu asisten AI Project Management {$instansi}. Tahun anggaran {$tahun}. User: {$userName}. "
+                . "Jawab Bahasa Indonesia, singkat dan jelas.\n"
+                . "Tools tersedia: lihat/cari proyek, laporan harian, personil, milestone, termin, pengadaan, vendor, dokumen, audit log; "
+                . "parse PDF (KAK/Kontrak/RAB/Penawaran) + OCR; bikin/edit/hapus proyek, assign vendor/personil, generate dokumen, kirim WA.\n"
+                . "ATURAN:\n"
+                . "- Lihat data (get_/list_/cari): langsung panggil tool. Ubah data (create/update/delete/approve/generate): konfirmasi dulu; "
+                . "kalau user bilang 'tanpa konfirmasi'/'langsung proses' pakai force_create=true.\n"
+                . "- HANYA pakai data dari hasil tool. JANGAN menebak nama/no_spk/nilai/tanggal. Kalau tool tidak mengembalikan data, bilang tidak ada / tidak terbaca.\n"
+                . "- Bikin proyek dari dokumen: panggil parse_multiple_docs (>=2 file) atau parse_*_pdf, ringkas, lalu create_pekerjaan dgn field hasil parse (jadwal/termin/milestone auto-merge server).\n"
+                . "- Format uang Rupiah (Rp). Jangan ulang tool tulis yang argumennya sama.\n"
+                // FASE D #6 few-shot: qwen sering salah isi argumen get_pekerjaan_list (masukin
+                // kalimat penuh ke 'search' / nambah filter status) -> hasil kosong -> ngaku
+                // "tidak ada proyek". Contoh konkret ini memperbaiki wobble itu (benchmark Q2/Q5).
+                . "CONTOH ARGUMEN TOOL (WAJIB ikuti pola):\n"
+                . "- \"sebutkan semua proyek\" / \"ada proyek apa aja\" / \"berapa proyek\" -> get_pekerjaan_list dengan argumen KOSONG {}. JANGAN isi 'search' dgn kalimat (\"semua proyek\") dan JANGAN tambah 'status_waktu' kalau user tak minta status — itu bikin hasil kosong.\n"
+                . "- \"vendor/nilai/detail proyek KAJIAN GEOTEKNIK\" -> get_pekerjaan_list dgn search=\"geoteknik\" (SATU kata kunci inti saja, bukan kalimat penuh).\n"
+                . "- Kalau tool balik kosong, coba SEKALI lagi get_pekerjaan_list {} tanpa filter SEBELUM bilang \"tidak ada\".";
+        }
 
         return "Kamu adalah asisten AI untuk sistem Project Management {$instansi}. "
             . "Tahun anggaran aktif: {$tahun}. User saat ini: {$userName}. "
@@ -246,6 +454,56 @@ class AiChatService
             . "Selalu KONFIRMASI dulu sebelum action yang ubah data (create/update/delete/approve/generate). Untuk read-only (get_*, list_*, search_*) langsung saja. "
             . "Format angka uang dalam Rupiah (Rp) dengan titik pemisah ribuan. "
             . "Status traffic light: aman (hijau), waspada (kuning), kritis/terlambat (merah), selesai (abu-abu).";
+    }
+
+    /**
+     * FASE D #1: OpenAI dapat semua 46 tool (cepat). Model lokal (Ollama) lambat memproses
+     * konteks besar tiap roundtrip → kirim SUBSET (core + grup yang cocok kata kunci) untuk
+     * pangkas latensi. Core selalu meng-cover alur dominan (lihat data + bikin proyek).
+     */
+    private function toolsForRequest(array $messages): array
+    {
+        $all = $this->getToolDefinitions();
+        if (config('services.llm.driver', 'openai') !== 'ollama') {
+            return $all;
+        }
+
+        $text = mb_strtolower(implode(' ', array_map(
+            fn ($m) => is_string($m['content'] ?? null) ? $m['content'] : '',
+            $messages
+        )));
+
+        $core = [
+            'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_my_pekerjaan',
+            'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
+            'parse_multiple_docs', 'ocr_pdf', 'list_uploaded_files', 'find_uploaded_file',
+            'create_pekerjaan', 'update_pekerjaan', 'assign_vendor', 'assign_personil',
+            'create_rencana_pengadaan', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
+        ];
+
+        $groups = [
+            [['laporan harian', 'absen', 'submit laporan'], ['get_laporan_harian', 'submit_daily_report', 'approve_daily_report', 'reject_daily_report']],
+            [['termin', 'bayar', 'pembayaran', 'cair', 'invoice'], ['get_termin_pekerjaan', 'request_termin', 'approve_termin', 'reject_termin', 'generate_invoice', 'generate_surat_permohonan_pembayaran']],
+            [['milestone', 'tahap', 'progres'], ['get_milestone_pekerjaan', 'tandai_milestone_selesai', 'update_progres_pekerjaan']],
+            [['personil', 'tenaga ahli', 'tim'], ['get_personil_proyek']],
+            [['realisasi', 'pengadaan', 'material', 'beli'], ['submit_realisasi', 'approve_realisasi', 'reject_realisasi']],
+            [['vendor baru', 'tambah perusahaan', 'tambah vendor'], ['create_perusahaan']],
+            [['user', 'pengguna', 'undang', 'akses', 'role', 'staff'], ['invite_vendor_user', 'invite_staff_user', 'grant_admin_access', 'revoke_access']],
+            [['wa', 'whatsapp', 'kirim pesan'], ['send_wa_to_vendor', 'send_wa_to_staff']],
+            [['audit', 'log', 'siapa ubah', 'riwayat'], ['search_audit_log']],
+            [['laporan akhir', 'pendahuluan', 'kuitansi', 'gaji', 'atk', 'sewa alat', 'bast', 'serah terima', 'generate dokumen', 'surat'], ['generate_laporan_pendahuluan', 'generate_laporan_akhir', 'generate_kuitansi_gaji', 'generate_invoice_atk', 'generate_invoice_sewa_alat', 'generate_bast']],
+            [['hapus', 'delete', 'batalkan'], ['delete_pekerjaan']],
+        ];
+
+        $names = $core;
+        foreach ($groups as [$kws, $tools]) {
+            foreach ($kws as $kw) {
+                if (str_contains($text, $kw)) { $names = array_merge($names, $tools); break; }
+            }
+        }
+        $keep = array_flip($names);
+
+        return array_values(array_filter($all, fn ($t) => isset($keep[$t['function']['name']])));
     }
 
     private function getToolDefinitions(): array
@@ -472,6 +730,7 @@ class AiChatService
                     'tahun_anggaran' => ['type' => 'integer'],
                     'lokasi'         => ['type' => 'string', 'description' => 'Lokasi pekerjaan EXACT dari hasil parse_kak_pdf field "lokasi_pekerjaan" (contoh: "Desa Lebakmuncang, Kec. Ciwidey, Kabupaten Bandung"). WAJIB pass kalau ada — composer pakai untuk Latar Belakang + Lokasi section di laporan.'],
                     'force_create'   => ['type' => 'boolean', 'description' => 'Bypass fuzzy name duplicate warning. Pakai cuma kalau user sudah confirm tetap mau bikin baru meski ada nama mirip.'],
+                    'allow_duplicate' => ['type' => 'boolean', 'description' => 'IZIN bikin proyek dengan nama+bidang+tahun SAMA PERSIS dengan yang sudah ada (kembar identik). Default false (diblok). Set true HANYA kalau user eksplisit sadar & sengaja mau duplikat. force_create TIDAK cukup untuk ini.'],
                     'termin_pembayaran' => [
                         'type' => 'array',
                         'description' => 'OTOMATIS pass kalau hasil parse_kontrak_pdf / parse_multiple_docs return field termin_pembayaran. Auto-save ke tabel termin_pembayaran.',
@@ -922,7 +1181,9 @@ class AiChatService
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         try {
             $parser = app(\App\Services\KickoffParserService::class);
-            return ['ok' => true, 'data' => $parser->parse($path)];
+            $data = $parser->parse($path);
+            $this->captureParseTruth('kak', $data); // G3b
+            return ['ok' => true, 'data' => $data];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
         }
@@ -935,7 +1196,9 @@ class AiChatService
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
         try {
             $parser = app(\App\Services\KontrakParserService::class);
-            return ['ok' => true, 'data' => $parser->parse($path)];
+            $data = $parser->parse($path);
+            $this->captureParseTruth('kontrak', $data); // G3b
+            return ['ok' => true, 'data' => $data];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
         }
@@ -1292,10 +1555,36 @@ class AiChatService
                 return ['error' => "Bidang dengan kode '{$input['bidang_kode']}' tidak ditemukan. Pilihan: BG, JL, DR, IR"];
             }
 
+            // G2: anti ketuker angka — nilai_kontrak tidak boleh > nilai_pagu.
+            if (($err = $this->assertNilaiSane($input)) !== null) return $err;
+
+            // G3a + G3b: tolak field kritis ngawur / tidak cocok dokumen (skip kalau force_create).
+            if (empty($input['force_create']) && ($err = $this->assertFieldKritisValid($input)) !== null) return $err;
+
             // === DUPLICATE DETECTION ===
             $namaInput = trim($input['nama_pekerjaan']);
             $tahun = $input['tahun_anggaran'] ?? (int) date('Y');
             $force = !empty($input['force_create']);
+
+            // G8: exact-duplicate guard — nama + bidang + tahun sama PERSIS tetap diblok
+            // WALAU force_create=true. force cuma untuk skip nag "nama mirip", BUKAN izin
+            // bikin kembar identik. Sengaja mau kembar? wajib allow_duplicate=true eksplisit.
+            if (empty($input['allow_duplicate'])) {
+                $exact = Pekerjaan::where('bidang_id', $bidang->id)
+                    ->where('tahun_anggaran', $tahun)
+                    ->whereRaw('LOWER(TRIM(nama_pekerjaan)) = ?', [mb_strtolower($namaInput)])
+                    ->first();
+                if ($exact) {
+                    return [
+                        'error'       => 'exact_duplicate_found',
+                        'pesan'       => "Sudah ada proyek dengan NAMA + bidang + tahun SAMA PERSIS: ID {$exact->id} ('{$exact->nama_pekerjaan}'"
+                            . ($exact->no_spk ? ", SPK {$exact->no_spk}" : '') . "). Ini kemungkinan besar duplikat. "
+                            . "JANGAN bikin baru — pakai existing (lanjut assign vendor/personil/RAB ke ID {$exact->id}). "
+                            . "Kalau user BENAR-BENAR sengaja mau proyek kembar (jarang), panggil ulang dengan allow_duplicate=true.",
+                        'existing_id' => $exact->id,
+                    ];
+                }
+            }
 
             // 1. Exact match by no_spk + bidang + tahun (unique constraint)
             if (!empty($input['no_spk'])) {
@@ -1540,6 +1829,10 @@ class AiChatService
                 logger()->warning("Auto-generate laporan_pendahuluan fail: " . $e->getMessage());
             }
 
+            // G7: proyek sudah jadi → buang cache parse (jadwal/termin/truth) biar
+            // proyek berikutnya tidak ketularan data proyek ini.
+            $this->clearAggregated();
+
             $msg = "Proyek '{$pekerjaan->nama_pekerjaan}' berhasil dibuat (ID: {$pekerjaan->id}, termin: {$terminCount}, milestones: {$milestoneCount})";
             if ($laporan) {
                 $msg .= ". Laporan Pendahuluan draft otomatis dibuat & tersedia di tab Dokumen + chat.";
@@ -1617,6 +1910,13 @@ class AiChatService
         foreach ($fields as $f) if (array_key_exists($f, $input)) $update[$f] = $input[$f];
         if (empty($update)) return ['error' => 'Tidak ada field yang diupdate'];
 
+        // G2: cek hasil akhir (merge existing + update) — kontrak tidak boleh > pagu.
+        $pagu    = array_key_exists('nilai_pagu', $update) ? $update['nilai_pagu'] : $pekerjaan->nilai_pagu;
+        $kontrak = array_key_exists('nilai_kontrak', $update) ? $update['nilai_kontrak'] : $pekerjaan->nilai_kontrak;
+        if ($pagu !== null && $kontrak !== null && (float) $kontrak > (float) $pagu) {
+            return ['error' => "Ditolak: nilai_kontrak (Rp " . number_format((float) $kontrak, 0, ',', '.') . ") > nilai_pagu (Rp " . number_format((float) $pagu, 0, ',', '.') . "). Kemungkinan ketukar — cek lagi."];
+        }
+
         $update['updated_by'] = auth()->id();
         $pekerjaan->update($update);
         return ['sukses' => true, 'pesan' => "Pekerjaan '{$pekerjaan->nama_pekerjaan}' diupdate (" . count($update) . " field)"];
@@ -1627,8 +1927,9 @@ class AiChatService
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
         if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
         $nama = $pekerjaan->nama_pekerjaan;
-        $pekerjaan->forceDelete();
-        return ['sukses' => true, 'pesan' => "Pekerjaan '{$nama}' dihapus permanen. Alasan: " . ($input['alasan'] ?? '-')];
+        // G4: soft delete (model pakai SoftDeletes) — bisa dipulihkan, JANGAN forceDelete.
+        $pekerjaan->delete();
+        return ['sukses' => true, 'pesan' => "Pekerjaan '{$nama}' dipindahkan ke tong sampah (bisa dipulihkan admin). Alasan: " . ($input['alasan'] ?? '-')];
     }
 
     private function toolAssignVendor(array $input): array
@@ -1859,10 +2160,10 @@ class AiChatService
                     'is_active' => true,
                 ],
             );
-            // Staff role belum ada di DB — kasih 'vendor' dulu sebagai fallback, scope limit via pekerjaan_id (TODO: dedicated staff role)
-            $u->syncRoles(['vendor']);
-            // Optional: bisa add metadata pekerjaan_id assignment (perlu table baru staff_pekerjaan)
-            return ['sukses' => true, 'user_id' => $u->id, 'pesan' => "Staff user '{$u->email}' dibuat untuk pekerjaan #{$input['pekerjaan_id']}"];
+            // G5: JANGAN auto-kasih role 'vendor' (kelebihan akses). Role 'staff' belum ada
+            // + scoping per-proyek butuh tabel staff_pekerjaan (migration → fase terpisah).
+            // Default least-privilege: user dibuat tanpa role, admin set manual.
+            return ['sukses' => true, 'user_id' => $u->id, 'pesan' => "Staff user '{$u->email}' dibuat untuk pekerjaan #{$input['pekerjaan_id']} TANPA role. Admin wajib set akses manual (role staff resmi + scoping per-proyek belum tersedia)."];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
         }
@@ -2226,11 +2527,20 @@ class AiChatService
         foreach ($results as $r) {
             if (empty($r['ok']) || empty($r['data'])) continue;
             $d = $r['data'];
-            if (!empty($d['jadwal_pelaksanaan'])) $aggregated['jadwal_pelaksanaan'] = $d['jadwal_pelaksanaan'];
-            if (!empty($d['keluaran'])) $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['keluaran']);
+            // G6: first-non-empty menang; kalau dok kedua juga punya, JANGAN timpa diam-diam — log.
+            foreach (['jadwal_pelaksanaan' => 'jadwal_pelaksanaan', 'milestones' => 'milestones', 'termin_pembayaran' => 'termin_pembayaran'] as $src => $dst) {
+                if (empty($d[$src])) continue;
+                if (empty($aggregated[$dst])) {
+                    $aggregated[$dst] = $d[$src];
+                } else {
+                    logger()->warning("parse_multiple_docs G6: '{$src}' dari dokumen '{$r['type']}' diabaikan (slot sudah terisi dari dokumen sebelumnya).");
+                }
+            }
+            if (!empty($d['keluaran']))  $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['keluaran']);
             if (!empty($d['pelaporan'])) $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['pelaporan']);
-            if (!empty($d['milestones'])) $aggregated['milestones'] = $d['milestones'];
-            if (!empty($d['termin_pembayaran'])) $aggregated['termin_pembayaran'] = $d['termin_pembayaran'];
+
+            // G3b: rekam field kritis hasil parse sebagai "kebenaran" untuk cross-check create.
+            $this->captureParseTruth($r['type'] ?? '', $d);
         }
 
         $this->storeAggregated($aggregated);

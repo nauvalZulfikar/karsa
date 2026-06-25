@@ -8,11 +8,12 @@ use Smalot\PdfParser\Parser;
 class KontrakParserService
 {
     private string $apiKey;
-    private string $apiUrl = 'https://api.openai.com/v1/chat/completions';
+    private string $apiUrl;
 
     public function __construct()
     {
-        $this->apiKey = config('services.openai.api_key', '');
+        $this->apiKey = config('services.llm_batch.api_key', '');
+        $this->apiUrl = rtrim(config('services.llm_batch.base_url', 'https://api.openai.com/v1'), '/') . '/chat/completions';
     }
 
     public function parse(string $pdfPath): array
@@ -181,7 +182,7 @@ class KontrakParserService
             ->retry(2, 2000)
             ->withToken($this->apiKey)
             ->post($this->apiUrl, [
-                'model'           => 'gpt-4o-mini',
+                'model'           => config('services.llm_batch.model', 'gpt-4o-mini'),
                 'max_tokens'      => 2048,
                 'response_format' => ['type' => 'json_object'],
                 'messages'        => [
@@ -375,7 +376,7 @@ PROMPT;
             ->connectTimeout(30)
             ->withToken($this->apiKey)
             ->post($this->apiUrl, [
-                'model'      => 'gpt-4o',
+                'model'      => config('services.llm_batch.vision_model', 'gpt-4o-mini'),
                 'max_tokens' => 1500,
                 'messages'   => [
                     ['role' => 'system', 'content' => 'Kamu ahli membaca Gantt chart dan jadwal proyek dari gambar. Return HANYA JSON valid. Abaikan gambar yang bukan Gantt chart.'],

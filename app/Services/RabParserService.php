@@ -12,11 +12,12 @@ use Smalot\PdfParser\Parser;
 class RabParserService
 {
     private string $apiKey;
-    private string $apiUrl = 'https://api.openai.com/v1/chat/completions';
+    private string $apiUrl;
 
     public function __construct()
     {
-        $this->apiKey = config('services.openai.api_key', '');
+        $this->apiKey = config('services.llm_batch.api_key', '');
+        $this->apiUrl = rtrim(config('services.llm_batch.base_url', 'https://api.openai.com/v1'), '/') . '/chat/completions';
     }
 
     public function parse(string $filePath): array
@@ -145,7 +146,7 @@ class RabParserService
             ->retry(2, 2000)
             ->withToken($this->apiKey)
             ->post($this->apiUrl, [
-                'model'           => 'gpt-4o-mini',
+                'model'           => config('services.llm_batch.model', 'gpt-4o-mini'),
                 'max_tokens'      => 3000,
                 'response_format' => ['type' => 'json_object'],
                 'messages'        => [

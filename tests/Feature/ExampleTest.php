@@ -12,8 +12,7 @@ class ExampleTest extends TestCase
      */
     public function test_the_application_returns_a_successful_response(): void
     {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
+        // App ini redirect root '/' ke panel admin (login). Sehat = redirect, bukan 200.
+        $this->get('/')->assertRedirect();
     }
 }
