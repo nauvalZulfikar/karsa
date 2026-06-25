@@ -1179,14 +1179,7 @@ class AiChatService
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
-        try {
-            $parser = app(\App\Services\KickoffParserService::class);
-            $data = $parser->parse($path);
-            $this->captureParseTruth('kak', $data); // G3b
-            return ['ok' => true, 'data' => $data];
-        } catch (\Throwable $e) {
-            return ['error' => $e->getMessage()];
-        }
+        return $this->parseDoc('kak', $path);
     }
 
     private function toolParseKontrak(array $input): array
@@ -1194,14 +1187,7 @@ class AiChatService
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
-        try {
-            $parser = app(\App\Services\KontrakParserService::class);
-            $data = $parser->parse($path);
-            $this->captureParseTruth('kontrak', $data); // G3b
-            return ['ok' => true, 'data' => $data];
-        } catch (\Throwable $e) {
-            return ['error' => $e->getMessage()];
-        }
+        return $this->parseDoc('kontrak', $path);
     }
 
     private function toolParseRab(array $input): array
@@ -1209,12 +1195,7 @@ class AiChatService
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
-        try {
-            $parser = app(\App\Services\RabParserService::class);
-            return ['ok' => true, 'data' => $parser->parse($path)];
-        } catch (\Throwable $e) {
-            return ['error' => $e->getMessage()];
-        }
+        return $this->parseDoc('rab', $path);
     }
 
     private function toolGenerateInvoice(array $input): array
@@ -1271,6 +1252,69 @@ class AiChatService
             'status'  => 'processing',
             'pesan'   => 'Dokumen ini hasil scan dan teksnya sedang dibaca (OCR) di background. '
                        . 'Tunggu ~10-30 detik lalu minta lagi — jangan OCR ulang sekarang.',
+        ];
+    }
+
+    /**
+     * Parse 1 dokumen. Backend cepat (OpenAI) → sinkron seperti biasa. Backend lokal
+     * lambat (Qwen/ollama) → lempar ke queue (ParseChatDocument), balikin status
+     * "processing" sampai hasil di-cache — supaya tak nahan worker web > 300s (504).
+     */
+    private function parseDoc(string $type, string $path): array
+    {
+        if (config('services.llm_batch.driver', 'openai') !== 'ollama') {
+            return $this->runParserSync($type, $path);   // OpenAI: cepat, langsung
+        }
+
+        $u = \App\Models\ChatUpload::where('abs_path', $path)->first();
+        if (!$u) {
+            return $this->runParserSync($type, $path);    // tak bisa di-cache (jarang) → sinkron
+        }
+
+        $resKey = \App\Jobs\ParseChatDocument::resultKey($u->id, $type);
+        $cached = \Illuminate\Support\Facades\Cache::get($resKey);
+        if (is_array($cached)) {
+            if (isset($cached['__error'])) {
+                \Illuminate\Support\Facades\Cache::forget($resKey); // boleh dicoba lagi
+                return ['error' => $cached['__error']];
+            }
+            $this->captureParseTruth($type, $cached);     // G3b (di konteks web — auth tersedia)
+            return ['ok' => true, 'data' => $cached];
+        }
+
+        $pendKey = \App\Jobs\ParseChatDocument::pendingKey($u->id, $type);
+        if (!\Illuminate\Support\Facades\Cache::get($pendKey)) {
+            \Illuminate\Support\Facades\Cache::put($pendKey, 1, 1800);
+            \App\Jobs\ParseChatDocument::dispatch($u->id, $type, $path);
+        }
+        return $this->parsePendingResponse();
+    }
+
+    private function runParserSync(string $type, string $path): array
+    {
+        $service = match ($type) {
+            'kak'                  => app(\App\Services\KickoffParserService::class),
+            'kontrak', 'penawaran' => app(\App\Services\KontrakParserService::class),
+            'rab'                  => app(\App\Services\RabParserService::class),
+            default                => null,
+        };
+        if (!$service) return ['error' => "Type '{$type}' gak dikenal (pakai: kak/kontrak/rab/penawaran)"];
+        try {
+            $data = $service->parse($path);
+            $this->captureParseTruth($type, $data);       // G3b
+            return ['ok' => true, 'data' => $data];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function parsePendingResponse(): array
+    {
+        return [
+            'ok'     => false,
+            'status' => 'processing',
+            'pesan'  => 'Dokumen sedang dianalisis AI lokal (Qwen) di background — bisa 1-3 menit. '
+                      . 'Tunggu sebentar lalu minta lagi; jangan parse ulang sekarang.',
         ];
     }
 
@@ -2261,13 +2305,7 @@ class AiChatService
         $path = $this->resolveFilePath($input['file_path'] ?? '');
         if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
         if ($this->ocrPending($path)) return $this->ocrPendingResponse();
-        // Pakai KontrakParserService (OpenAI prompt cukup general — bisa di-tune nanti)
-        try {
-            $parser = app(\App\Services\KontrakParserService::class);
-            return ['ok' => true, 'data' => $parser->parse($path), 'catatan' => 'Pakai KontrakParser sebagai fallback untuk Penawaran'];
-        } catch (\Throwable $e) {
-            return ['error' => $e->getMessage()];
-        }
+        return $this->parseDoc('penawaran', $path);
     }
 
     private function toolCrossCheckRab(array $input): array
@@ -2475,10 +2513,10 @@ class AiChatService
 
         $startedAt = microtime(true);
         $results = [];
-        $promises = [];
+        $anyPending = false;
 
-        // Build promises for parallel execution via Guzzle's promise system through Laravel HTTP pool
-        // Since each parser calls OpenAI HTTP, we trigger them concurrently via async approach
+        // Tiap dokumen lewat parseDoc: OpenAI = sinkron; Qwen lokal = di-queue + cache
+        // (balikin "processing" sampai job kelar). Multi-doc untuk Qwen jadi async penuh.
         foreach ($docs as $doc) {
             $type = strtolower(trim($doc['type'] ?? ''));
             $path = $this->resolveFilePath($doc['file_path'] ?? '');
@@ -2487,33 +2525,32 @@ class AiChatService
                 $results[] = ['type' => $type, 'error' => "File tidak ditemukan: " . ($doc['file_path'] ?? '')];
                 continue;
             }
-
             if ($this->ocrPending($path)) {
                 $results[] = ['type' => $type, 'file' => basename($path)] + $this->ocrPendingResponse();
+                $anyPending = true;
                 continue;
             }
 
-            // Dispatch parser based on type. Each parser is synchronous but we run them in sequence
-            // BUT release the HTTP wait via parallel curl_multi.
-            // Simple approach: use array_map dengan parallel HTTP via Http::pool (only for OpenAI calls).
-            // For now, run sequentially BUT skip pre-extract redundancy.
-            try {
-                $parser = match ($type) {
-                    'kak'       => app(\App\Services\KickoffParserService::class),
-                    'kontrak'   => app(\App\Services\KontrakParserService::class),
-                    'rab'       => app(\App\Services\RabParserService::class),
-                    'penawaran' => app(\App\Services\KontrakParserService::class), // fallback parser
-                    default     => null,
-                };
-                if (!$parser) {
-                    $results[] = ['type' => $type, 'error' => "Type '{$type}' gak dikenal (pakai: kak/kontrak/rab/penawaran)"];
-                    continue;
-                }
-                $data = $parser->parse($path);
-                $results[] = ['type' => $type, 'file' => basename($path), 'ok' => true, 'data' => $data];
-            } catch (\Throwable $e) {
-                $results[] = ['type' => $type, 'file' => basename($path), 'error' => $e->getMessage()];
+            $r = $this->parseDoc($type, $path);
+            if (($r['status'] ?? '') === 'processing') {
+                $results[] = ['type' => $type, 'file' => basename($path)] + $r;
+                $anyPending = true;
+            } elseif (!empty($r['ok'])) {
+                $results[] = ['type' => $type, 'file' => basename($path), 'ok' => true, 'data' => $r['data']];
+            } else {
+                $results[] = ['type' => $type, 'file' => basename($path), 'error' => $r['error'] ?? 'parse gagal'];
             }
+        }
+
+        // Qwen async: sebagian dokumen masih diproses → jangan aggregate dulu, suruh tunggu.
+        if ($anyPending) {
+            return [
+                'ok'      => false,
+                'status'  => 'processing',
+                'results' => $results,
+                'pesan'   => 'Sebagian/semua dokumen masih dianalisis AI lokal (Qwen) di background (~1-3 menit/dok). '
+                           . 'Tunggu sebentar lalu minta lagi — hasil yang sudah selesai tersimpan, tak akan diparse ulang.',
+            ];
         }
 
         $elapsed = round(microtime(true) - $startedAt, 2);
@@ -2538,9 +2575,7 @@ class AiChatService
             }
             if (!empty($d['keluaran']))  $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['keluaran']);
             if (!empty($d['pelaporan'])) $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['pelaporan']);
-
-            // G3b: rekam field kritis hasil parse sebagai "kebenaran" untuk cross-check create.
-            $this->captureParseTruth($r['type'] ?? '', $d);
+            // G3b captureParseTruth sudah dilakukan di parseDoc/runParserSync (sumber tunggal).
         }
 
         $this->storeAggregated($aggregated);
