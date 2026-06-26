@@ -63,7 +63,7 @@ class AiChatService
     {
         static $readOnly = [
             'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_laporan_harian',
-            'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'get_rencana_pengadaan', 'get_my_pekerjaan',
+            'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'list_termin', 'get_rencana_pengadaan', 'get_my_pekerjaan',
             'search_audit_log', 'list_perusahaan', 'list_uploaded_files', 'find_uploaded_file',
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'cross_check_rab_vs_kontrak',
@@ -452,9 +452,12 @@ class AiChatService
             . "      Kalau user pilih 'GANTI SPK': tanya user 'Mohon kasih nomor SPK baru'. Jangan auto-bikin, tunggu user kasih SPK baru.\n"
             . "  ATURAN UMUM: SETELAH user jawab di turn 2, JANGAN PERNAH tanya pertanyaan yang sama lagi. Kalau yakin user mau bikin baru, langsung action. Kalau yakin user mau pakai existing, langsung lanjut. Hanya tanya ulang kalau user jawab benar-benar gak nyambung/ambigu (misal 'apa?').\n"
             . "PENCARIAN PROYEK (PENTING): saat get_pekerjaan_list, isi 'search' dengan 1-2 KATA KUNCI paling unik dari nama proyek (mis. user tanya 'DED Jalan Cileunyi' -> search='Cileunyi'; 'Rehabilitasi Bendung Cisangkuy' -> search='Cisangkuy'), JANGAN kirim kalimat/frasa panjang. JANGAN tambah filter 'status_waktu' kecuali user memang minta status tertentu. Kalau hasil kosong, WAJIB coba SEKALI lagi get_pekerjaan_list {} (tanpa argumen) lalu cocokkan sendiri SEBELUM bilang 'tidak ada'.\n"
-            . "PERTANYAAN SUPERLATIF (nilai/kontrak terbesar-terkecil, paling mahal/murah, progres tertinggi/terendah, 'proyek mana yang paling ...'): JANGAN bandingkan angka sendiri. Pakai get_pekerjaan_list dengan sort_by + order + limit=1: terbesar/termahal -> sort_by='nilai_kontrak', order='desc'; terkecil/termurah -> sort_by='nilai_kontrak', order='asc' (server otomatis menaruh nilai Rp 0/belum terisi paling akhir, jadi hasil teratas adalah yang terisi terkecil); progres tertinggi/terendah -> sort_by='progres'. Ambil hasil teratas sebagai jawaban.\n"
-            . "PERTANYAAN AGREGAT LAIN (total nilai, rata-rata, jumlah, 'belum 100%', daftar yang memenuhi syarat): panggil get_pekerjaan_list {} TANPA filter status_waktu, lalu hitung/saring sendiri dari SELURUH hasil pakai field angka 'nilai_kontrak_num' & 'progres_num' (bukan string ber-titik). JANGAN pakai filter 'status_waktu' untuk pertanyaan soal nilai/progres — itu menyembunyikan proyek.\n"
-            . "TERMIN LINTAS PROYEK ('termin yang sudah diajukan / menunggu pembayaran' tanpa sebut proyek): panggil get_pekerjaan_list {} lalu get_termin_pekerjaan untuk tiap proyek. HANYA termin dengan status 'diajukan' (atau 'disetujui'/'dibayar') yang dihitung 'sudah diajukan ke pembayaran'. Status 'draft' = BELUM diajukan, JANGAN dimasukkan ke daftar yang sudah diajukan. Jangan minta ID ke user dulu — kerjakan sendiri.\n"
+            . "PERTANYAAN SUPERLATIF (paling besar/kecil/mahal/murah, tertinggi/terendah, TERLAMA/TERCEPAT durasi, 'proyek mana yang paling ...'): JANGAN bandingkan angka sendiri. Pakai get_pekerjaan_list dengan sort_by + order + limit=1: termahal -> sort_by='nilai_kontrak' order='desc'; termurah -> sort_by='nilai_kontrak' order='asc' (server menaruh nilai Rp 0/belum terisi paling akhir); pagu terbesar/terkecil -> sort_by='nilai_pagu'; progres -> sort_by='progres'; durasi paling lama -> sort_by='durasi' order='desc'; durasi paling pendek/cepat -> sort_by='durasi' order='asc'. Ambil hasil teratas. (Kalau beberapa proyek seri di nilai sama, sebutkan semuanya.)\n"
+            . "TOTAL / RATA-RATA / JUMLAH (total nilai kontrak, total pagu anggaran, rata-rata progres, jumlah proyek, jumlah tenaga ahli, jumlah vendor/perusahaan): JANGAN jumlah/hitung manual dari daftar (rawan salah). Panggil get_dashboard_stats dan pakai angkanya langsung: total_nilai_kontrak, total_nilai_pagu, rata_rata_progres, total_pekerjaan, total_tenaga_ahli, total_perusahaan.\n"
+            . "AGREGAT LAIN (daftar yang memenuhi syarat, mis. 'belum 100%', 'nilai 0'): get_pekerjaan_list {} TANPA filter status_waktu, lalu saring sendiri pakai field angka 'nilai_kontrak_num'/'nilai_pagu_num'/'progres_num'. JANGAN pakai filter 'status_waktu' untuk pertanyaan nilai/progres.\n"
+            . "PROYEK BERDASARKAN VENDOR ('proyek yang dikerjakan oleh PT/CV X'): panggil get_pekerjaan_list dengan search berisi 1 kata unik dari nama vendor (mis. 'TACIBA', bukan 'CV TACIBA SHIGOTO NUSANTARA') — search sudah mencakup nama perusahaan.\n"
+            . "TERMIN LINTAS PROYEK ('termin yang sudah diajukan / menunggu pembayaran' tanpa sebut proyek): panggil list_termin dengan status='diajukan' (JANGAN loop get_termin_pekerjaan, JANGAN minta ID). Termin status 'draft' = BELUM diajukan — jangan disebut sudah diajukan. Untuk termin satu proyek tertentu, get_termin_pekerjaan(pekerjaan_id) atau list_termin(pekerjaan_id).\n"
+            . "JANGAN CAMPUR ISTILAH: 'laporan harian' = kehadiran/aktivitas harian vendor di lapangan -> get_laporan_harian (BUKAN termin). 'termin' = tahap pembayaran -> list_termin / get_termin_pekerjaan. Pertanyaan 'laporan harian ... minggu ini' WAJIB pakai get_laporan_harian, jangan list_termin.\n"
             . "RENCANA PENGADAAN: untuk 'proyek mana yang punya rencana pengadaan' panggil get_rencana_pengadaan TANPA argumen (balikin hanya proyek yang benar-benar punya). Untuk rincian item satu proyek, panggil get_rencana_pengadaan dengan pekerjaan_id. JANGAN samakan dengan termin/daftar proyek biasa, dan JANGAN klaim semua proyek punya pengadaan.\n"
             . "Selalu KONFIRMASI dulu sebelum action yang ubah data (create/update/delete/approve/generate). Untuk read-only (get_*, list_*, search_*) langsung saja. "
             . "Format angka uang dalam Rupiah (Rp) dengan titik pemisah ribuan. "
@@ -483,7 +486,7 @@ class AiChatService
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'list_uploaded_files', 'find_uploaded_file',
             'create_pekerjaan', 'update_pekerjaan', 'assign_vendor', 'assign_personil',
-            'create_rencana_pengadaan', 'get_rencana_pengadaan', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
+            'create_rencana_pengadaan', 'get_rencana_pengadaan', 'list_termin', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
         ];
 
         $groups = [
@@ -532,7 +535,7 @@ class AiChatService
                         'properties' => [
                             'search'       => ['type' => 'string',  'description' => 'Kata kunci nama pekerjaan atau nomor SPK'],
                             'status_waktu' => ['type' => 'string',  'description' => 'Filter: aman, waspada, kritis, terlambat, selesai, belum_mulai'],
-                            'sort_by'      => ['type' => 'string',  'description' => "Urutkan hasil: 'nilai_kontrak' atau 'progres'. Pakai untuk pertanyaan terbesar/terkecil/tertinggi/terendah (gabung dengan order + limit=1)."],
+                            'sort_by'      => ['type' => 'string',  'description' => "Urutkan hasil: 'nilai_kontrak', 'nilai_pagu', 'progres', atau 'durasi' (lama pengerjaan/hari kerja). Pakai untuk pertanyaan terbesar/terkecil/tertinggi/terendah/terlama/tercepat (gabung dengan order + limit=1)."],
                             'order'        => ['type' => 'string',  'description' => "Arah urut: 'desc' (terbesar dulu) atau 'asc' (terkecil dulu). Default desc. Untuk nilai_kontrak asc, proyek bernilai Rp 0/belum terisi otomatis ditaruh paling akhir."],
                             'limit'        => ['type' => 'integer', 'description' => 'Jumlah maksimal hasil (default 10, max 20). Pakai 1 untuk ambil yang teratas saja.'],
                         ],
@@ -651,6 +654,21 @@ class AiChatService
                         'type'       => 'object',
                         'properties' => [
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (opsional). Kosongkan untuk daftar semua proyek yang punya rencana pengadaan.'],
+                        ],
+                        'required' => [],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'list_termin',
+                    'description' => "Daftar termin pembayaran LINTAS proyek dengan filter status opsional. Untuk 'termin yang sudah diajukan / menunggu pembayaran' pakai status='diajukan'. Status valid: draft, diajukan, disetujui, dibayar, ditolak. Tanpa filter = semua termin. Opsional pekerjaan_id untuk batasi ke satu proyek.",
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'status'       => ['type' => 'string',  'description' => "Filter status termin: draft / diajukan / disetujui / dibayar / ditolak"],
+                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'Opsional: batasi ke satu pekerjaan'],
                         ],
                         'required' => [],
                     ],
@@ -1143,6 +1161,7 @@ class AiChatService
             'get_milestone_pekerjaan'  => $this->toolMilestonePekerjaan($input),
             'get_termin_pekerjaan'     => $this->toolTerminPekerjaan($input),
             'get_rencana_pengadaan'    => $this->toolRencanaPengadaan($input),
+            'list_termin'              => $this->toolListTermin($input),
             'update_progres_pekerjaan' => $this->toolUpdateProgres($input),
             'tandai_milestone_selesai' => $this->toolMilestoneSelesai($input),
             'approve_termin'           => $this->toolApproveTermin($input),
@@ -1348,7 +1367,10 @@ class AiChatService
         return [
             'total_pekerjaan'     => $all->count(),
             'total_nilai_kontrak' => 'Rp ' . number_format((float) $all->sum('nilai_kontrak'), 0, ',', '.'),
+            'total_nilai_pagu'    => 'Rp ' . number_format((float) $all->sum('nilai_pagu'), 0, ',', '.'),
             'rata_rata_progres'   => round((float) $all->avg('progres_persen'), 1) . '%',
+            'total_tenaga_ahli'   => \App\Models\Master\TenagaAhli::where('is_active', true)->count(),
+            'total_perusahaan'    => \App\Models\Master\Perusahaan::count(),
             'traffic_light'       => [
                 'aman'        => $statusGroups->get('aman', collect())->count(),
                 'waspada'     => $statusGroups->get('waspada', collect())->count(),
@@ -1380,7 +1402,8 @@ class AiChatService
                 foreach ($tokens as $t) {
                     $q->where(fn ($w) => $w
                         ->where('nama_pekerjaan', 'like', "%{$t}%")
-                        ->orWhere('no_spk', 'like', "%{$t}%"));
+                        ->orWhere('no_spk', 'like', "%{$t}%")
+                        ->orWhereHas('perusahaan', fn ($pq) => $pq->where('nama', 'like', "%{$t}%")));
                 }
             });
         }
@@ -1394,14 +1417,17 @@ class AiChatService
         // Sortir server-side untuk pertanyaan superlatif (terbesar/terkecil) — lebih andal
         // daripada minta model membandingkan angka sendiri.
         $sortBy = $input['sort_by'] ?? null;
-        if (in_array($sortBy, ['nilai_kontrak', 'progres'], true)) {
+        if (in_array($sortBy, ['nilai_kontrak', 'nilai_pagu', 'progres', 'durasi'], true)) {
             $desc = ($input['order'] ?? 'desc') !== 'asc';
             $items = $items->sortBy(function ($p) use ($sortBy, $desc) {
                 if ($sortBy === 'progres') {
                     return (int) $p->progres_persen;
                 }
-                $v = (int) $p->nilai_kontrak;
-                // nilai 0 = belum terisi → taruh paling akhir saat ascending (cari termurah terisi)
+                if ($sortBy === 'durasi') {
+                    return (int) $p->hari_kerja;
+                }
+                $v = $sortBy === 'nilai_pagu' ? (int) $p->nilai_pagu : (int) $p->nilai_kontrak;
+                // nilai 0 = belum terisi → taruh paling akhir saat ascending (cari terkecil terisi)
                 return ($v === 0 && !$desc) ? PHP_INT_MAX : $v;
             }, SORT_REGULAR, $desc)->values();
         }
@@ -1412,12 +1438,18 @@ class AiChatService
             'nama'              => $p->nama_pekerjaan,
             'bidang'            => $p->bidang?->nama_bidang,
             'perusahaan'        => $p->perusahaan?->nama,
+            'nilai_pagu'        => 'Rp ' . number_format((float) $p->nilai_pagu, 0, ',', '.'),
+            'nilai_pagu_num'    => (int) $p->nilai_pagu,
             'nilai_kontrak'     => 'Rp ' . number_format((float) $p->nilai_kontrak, 0, ',', '.'),
             // angka mentah untuk perbandingan/sortir numerik (string 'Rp 99.678.000' bikin
             // model salah banding). 0 = belum terisi.
             'nilai_kontrak_num' => (int) $p->nilai_kontrak,
             'progres'           => $p->progres_persen . '%',
             'progres_num'       => (int) $p->progres_persen,
+            'durasi'            => $p->hari_kerja . ' ' . ($p->satuan_waktu ?? 'hari'),
+            'hari_kerja_num'    => (int) $p->hari_kerja,
+            'tanggal_mulai'     => optional($p->tanggal_mulai)->format('d/m/Y'),
+            'tanggal_akhir'     => optional($p->tanggal_akhir)->format('d/m/Y'),
             'status_waktu'      => $p->status_waktu,
             'sisa_hari'         => $p->sisa_hari,
         ])->values()->toArray();
@@ -1604,6 +1636,33 @@ class AiChatService
                 'pekerjaan'    => $names[$r->pekerjaan_id] ?? null,
                 'jumlah_item'  => (int) $r->jml,
             ])->values()->toArray(),
+        ];
+    }
+
+    private function toolListTermin(array $input): array
+    {
+        $q = TerminPembayaran::query()->with('pekerjaan');
+        if (!empty($input['pekerjaan_id'])) {
+            $q->where('pekerjaan_id', (int) $input['pekerjaan_id']);
+        }
+        if (!empty($input['status'])) {
+            $q->where('status', $input['status']);
+        }
+        $items = $q->orderBy('pekerjaan_id')->orderBy('nomor_termin')->get();
+        if ($items->isEmpty()) {
+            $f = !empty($input['status']) ? " dengan status '{$input['status']}'" : '';
+            return ['pesan' => "Tidak ada termin{$f}.", 'data' => []];
+        }
+        return [
+            'jumlah' => $items->count(),
+            'data'   => $items->map(fn ($t) => [
+                'pekerjaan'         => $t->pekerjaan?->nama_pekerjaan,
+                'nomor'             => $t->nomor_termin,
+                'nama'              => $t->nama_termin,
+                'nilai'             => 'Rp ' . number_format((float) $t->nilai_termin, 0, ',', '.'),
+                'status'            => $t->status,
+                'tanggal_pengajuan' => $t->tanggal_pengajuan?->format('d/m/Y'),
+            ])->toArray(),
         ];
     }
 
