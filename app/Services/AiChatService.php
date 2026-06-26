@@ -63,7 +63,7 @@ class AiChatService
     {
         static $readOnly = [
             'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_laporan_harian',
-            'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'get_my_pekerjaan',
+            'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'get_rencana_pengadaan', 'get_my_pekerjaan',
             'search_audit_log', 'list_perusahaan', 'list_uploaded_files', 'find_uploaded_file',
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'cross_check_rab_vs_kontrak',
@@ -451,6 +451,11 @@ class AiChatService
             . "      Kalau user pilih 'UPDATE / pakai existing / lanjut / OK': JANGAN panggil create_pekerjaan lagi. Pakai pekerjaan_id Y dari error response, lanjut ke STEP 5 (assign vendor + personil + RAB) untuk pekerjaan Y. Juga kalau perlu update field, panggil update_pekerjaan(pekerjaan_id=Y, ...) sekali.\n"
             . "      Kalau user pilih 'GANTI SPK': tanya user 'Mohon kasih nomor SPK baru'. Jangan auto-bikin, tunggu user kasih SPK baru.\n"
             . "  ATURAN UMUM: SETELAH user jawab di turn 2, JANGAN PERNAH tanya pertanyaan yang sama lagi. Kalau yakin user mau bikin baru, langsung action. Kalau yakin user mau pakai existing, langsung lanjut. Hanya tanya ulang kalau user jawab benar-benar gak nyambung/ambigu (misal 'apa?').\n"
+            . "PENCARIAN PROYEK (PENTING): saat get_pekerjaan_list, isi 'search' dengan 1-2 KATA KUNCI paling unik dari nama proyek (mis. user tanya 'DED Jalan Cileunyi' -> search='Cileunyi'; 'Rehabilitasi Bendung Cisangkuy' -> search='Cisangkuy'), JANGAN kirim kalimat/frasa panjang. JANGAN tambah filter 'status_waktu' kecuali user memang minta status tertentu. Kalau hasil kosong, WAJIB coba SEKALI lagi get_pekerjaan_list {} (tanpa argumen) lalu cocokkan sendiri SEBELUM bilang 'tidak ada'.\n"
+            . "PERTANYAAN SUPERLATIF (nilai/kontrak terbesar-terkecil, paling mahal/murah, progres tertinggi/terendah, 'proyek mana yang paling ...'): JANGAN bandingkan angka sendiri. Pakai get_pekerjaan_list dengan sort_by + order + limit=1: terbesar/termahal -> sort_by='nilai_kontrak', order='desc'; terkecil/termurah -> sort_by='nilai_kontrak', order='asc' (server otomatis menaruh nilai Rp 0/belum terisi paling akhir, jadi hasil teratas adalah yang terisi terkecil); progres tertinggi/terendah -> sort_by='progres'. Ambil hasil teratas sebagai jawaban.\n"
+            . "PERTANYAAN AGREGAT LAIN (total nilai, rata-rata, jumlah, 'belum 100%', daftar yang memenuhi syarat): panggil get_pekerjaan_list {} TANPA filter status_waktu, lalu hitung/saring sendiri dari SELURUH hasil pakai field angka 'nilai_kontrak_num' & 'progres_num' (bukan string ber-titik). JANGAN pakai filter 'status_waktu' untuk pertanyaan soal nilai/progres — itu menyembunyikan proyek.\n"
+            . "TERMIN LINTAS PROYEK ('termin yang sudah diajukan / menunggu pembayaran' tanpa sebut proyek): panggil get_pekerjaan_list {} lalu get_termin_pekerjaan untuk tiap proyek. HANYA termin dengan status 'diajukan' (atau 'disetujui'/'dibayar') yang dihitung 'sudah diajukan ke pembayaran'. Status 'draft' = BELUM diajukan, JANGAN dimasukkan ke daftar yang sudah diajukan. Jangan minta ID ke user dulu — kerjakan sendiri.\n"
+            . "RENCANA PENGADAAN: untuk 'proyek mana yang punya rencana pengadaan' panggil get_rencana_pengadaan TANPA argumen (balikin hanya proyek yang benar-benar punya). Untuk rincian item satu proyek, panggil get_rencana_pengadaan dengan pekerjaan_id. JANGAN samakan dengan termin/daftar proyek biasa, dan JANGAN klaim semua proyek punya pengadaan.\n"
             . "Selalu KONFIRMASI dulu sebelum action yang ubah data (create/update/delete/approve/generate). Untuk read-only (get_*, list_*, search_*) langsung saja. "
             . "Format angka uang dalam Rupiah (Rp) dengan titik pemisah ribuan. "
             . "Status traffic light: aman (hijau), waspada (kuning), kritis/terlambat (merah), selesai (abu-abu).";
@@ -478,7 +483,7 @@ class AiChatService
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'list_uploaded_files', 'find_uploaded_file',
             'create_pekerjaan', 'update_pekerjaan', 'assign_vendor', 'assign_personil',
-            'create_rencana_pengadaan', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
+            'create_rencana_pengadaan', 'get_rencana_pengadaan', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
         ];
 
         $groups = [
@@ -527,7 +532,9 @@ class AiChatService
                         'properties' => [
                             'search'       => ['type' => 'string',  'description' => 'Kata kunci nama pekerjaan atau nomor SPK'],
                             'status_waktu' => ['type' => 'string',  'description' => 'Filter: aman, waspada, kritis, terlambat, selesai, belum_mulai'],
-                            'limit'        => ['type' => 'integer', 'description' => 'Jumlah maksimal hasil (default 10, max 20)'],
+                            'sort_by'      => ['type' => 'string',  'description' => "Urutkan hasil: 'nilai_kontrak' atau 'progres'. Pakai untuk pertanyaan terbesar/terkecil/tertinggi/terendah (gabung dengan order + limit=1)."],
+                            'order'        => ['type' => 'string',  'description' => "Arah urut: 'desc' (terbesar dulu) atau 'asc' (terkecil dulu). Default desc. Untuk nilai_kontrak asc, proyek bernilai Rp 0/belum terisi otomatis ditaruh paling akhir."],
+                            'limit'        => ['type' => 'integer', 'description' => 'Jumlah maksimal hasil (default 10, max 20). Pakai 1 untuk ambil yang teratas saja.'],
                         ],
                         'required' => [],
                     ],
@@ -632,6 +639,20 @@ class AiChatService
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (wajib)'],
                         ],
                         'required' => ['pekerjaan_id'],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'get_rencana_pengadaan',
+                    'description' => 'Lihat rencana pengadaan. TANPA pekerjaan_id: daftar proyek yang PUNYA rencana pengadaan beserta jumlah item (pakai untuk "proyek mana yang punya rencana pengadaan"). DENGAN pekerjaan_id: rincian item pengadaan proyek tsb.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (opsional). Kosongkan untuk daftar semua proyek yang punya rencana pengadaan.'],
+                        ],
+                        'required' => [],
                     ],
                 ],
             ],
@@ -1121,6 +1142,7 @@ class AiChatService
             'get_personil_proyek'      => $this->toolPersonilProyek($input),
             'get_milestone_pekerjaan'  => $this->toolMilestonePekerjaan($input),
             'get_termin_pekerjaan'     => $this->toolTerminPekerjaan($input),
+            'get_rencana_pengadaan'    => $this->toolRencanaPengadaan($input),
             'update_progres_pekerjaan' => $this->toolUpdateProgres($input),
             'tandai_milestone_selesai' => $this->toolMilestoneSelesai($input),
             'approve_termin'           => $this->toolApproveTermin($input),
@@ -1344,10 +1366,23 @@ class AiChatService
         $query = Pekerjaan::with(['bidang', 'perusahaan', 'statusPekerjaan']);
 
         if (!empty($input['search'])) {
-            $s = $input['search'];
-            $query->where(fn ($q) => $q
-                ->where('nama_pekerjaan', 'like', "%{$s}%")
-                ->orWhere('no_spk', 'like', "%{$s}%"));
+            // Tokenize: tiap kata kunci harus muncul (AND), masing-masing boleh di nama ATAU no_spk.
+            // Biar "DED Cileunyi" cocok dgn "DED Jalan Kabupaten Wilayah Cileunyi" (kata tak berurutan).
+            $stop   = ['proyek', 'pekerjaan', 'yang', 'yg', 'dan', 'di', 'ke'];
+            $tokens = array_values(array_filter(
+                preg_split('/\s+/', trim($input['search'])),
+                fn ($t) => mb_strlen($t) >= 3 && !in_array(mb_strtolower($t), $stop, true)
+            ));
+            if (empty($tokens)) {
+                $tokens = [$input['search']]; // fallback: frasa apa adanya
+            }
+            $query->where(function ($q) use ($tokens) {
+                foreach ($tokens as $t) {
+                    $q->where(fn ($w) => $w
+                        ->where('nama_pekerjaan', 'like', "%{$t}%")
+                        ->orWhere('no_spk', 'like', "%{$t}%"));
+                }
+            });
         }
 
         $items = $query->latest()->limit(50)->get();
@@ -1356,16 +1391,35 @@ class AiChatService
             $items = $items->filter(fn ($p) => $p->status_waktu === $input['status_waktu'])->values();
         }
 
+        // Sortir server-side untuk pertanyaan superlatif (terbesar/terkecil) — lebih andal
+        // daripada minta model membandingkan angka sendiri.
+        $sortBy = $input['sort_by'] ?? null;
+        if (in_array($sortBy, ['nilai_kontrak', 'progres'], true)) {
+            $desc = ($input['order'] ?? 'desc') !== 'asc';
+            $items = $items->sortBy(function ($p) use ($sortBy, $desc) {
+                if ($sortBy === 'progres') {
+                    return (int) $p->progres_persen;
+                }
+                $v = (int) $p->nilai_kontrak;
+                // nilai 0 = belum terisi → taruh paling akhir saat ascending (cari termurah terisi)
+                return ($v === 0 && !$desc) ? PHP_INT_MAX : $v;
+            }, SORT_REGULAR, $desc)->values();
+        }
+
         return $items->take($limit)->map(fn ($p) => [
-            'id'            => $p->id,
-            'no_spk'        => $p->no_spk,
-            'nama'          => $p->nama_pekerjaan,
-            'bidang'        => $p->bidang?->nama_bidang,
-            'perusahaan'    => $p->perusahaan?->nama,
-            'nilai_kontrak' => 'Rp ' . number_format((float) $p->nilai_kontrak, 0, ',', '.'),
-            'progres'       => $p->progres_persen . '%',
-            'status_waktu'  => $p->status_waktu,
-            'sisa_hari'     => $p->sisa_hari,
+            'id'                => $p->id,
+            'no_spk'            => $p->no_spk,
+            'nama'              => $p->nama_pekerjaan,
+            'bidang'            => $p->bidang?->nama_bidang,
+            'perusahaan'        => $p->perusahaan?->nama,
+            'nilai_kontrak'     => 'Rp ' . number_format((float) $p->nilai_kontrak, 0, ',', '.'),
+            // angka mentah untuk perbandingan/sortir numerik (string 'Rp 99.678.000' bikin
+            // model salah banding). 0 = belum terisi.
+            'nilai_kontrak_num' => (int) $p->nilai_kontrak,
+            'progres'           => $p->progres_persen . '%',
+            'progres_num'       => (int) $p->progres_persen,
+            'status_waktu'      => $p->status_waktu,
+            'sisa_hari'         => $p->sisa_hari,
         ])->values()->toArray();
     }
 
@@ -1513,6 +1567,43 @@ class AiChatService
                 'syarat_terpenuhi'      => $t->is_syarat_terpenuhi,
                 'tanggal_pengajuan'     => $t->tanggal_pengajuan?->format('d/m/Y'),
             ])->toArray(),
+        ];
+    }
+
+    private function toolRencanaPengadaan(array $input): array
+    {
+        if (!empty($input['pekerjaan_id'])) {
+            $pekerjaan = Pekerjaan::find((int) $input['pekerjaan_id']);
+            if (!$pekerjaan) {
+                return ['error' => 'Pekerjaan tidak ditemukan'];
+            }
+            $items = \App\Models\RencanaPengadaan::where('pekerjaan_id', $pekerjaan->id)->get();
+            return [
+                'pekerjaan'   => $pekerjaan->nama_pekerjaan,
+                'jumlah_item' => $items->count(),
+                'items'       => $items->map(fn ($r) => [
+                    'nama_item'    => $r->nama_item,
+                    'satuan'       => $r->satuan,
+                    'volume'       => $r->volume_rencana,
+                    'harga_satuan' => 'Rp ' . number_format((float) $r->harga_satuan_rencana, 0, ',', '.'),
+                ])->toArray(),
+            ];
+        }
+
+        // Tanpa id: proyek mana saja yang PUNYA rencana pengadaan.
+        $rows = \App\Models\RencanaPengadaan::selectRaw('pekerjaan_id, COUNT(*) as jml')
+            ->groupBy('pekerjaan_id')->get();
+        if ($rows->isEmpty()) {
+            return ['pesan' => 'Belum ada proyek yang memiliki rencana pengadaan.', 'data' => []];
+        }
+        $names = Pekerjaan::whereIn('id', $rows->pluck('pekerjaan_id'))->pluck('nama_pekerjaan', 'id');
+        return [
+            'jumlah_proyek' => $rows->count(),
+            'data'          => $rows->map(fn ($r) => [
+                'pekerjaan_id' => $r->pekerjaan_id,
+                'pekerjaan'    => $names[$r->pekerjaan_id] ?? null,
+                'jumlah_item'  => (int) $r->jml,
+            ])->values()->toArray(),
         ];
     }
 
