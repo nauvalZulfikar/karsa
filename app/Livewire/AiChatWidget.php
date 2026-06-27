@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\ChatSession;
+use App\Models\ChatUpload;
 use App\Services\AiChatService;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Validate;
@@ -14,18 +15,26 @@ class AiChatWidget extends Component
     use WithFileUploads;
 
     public bool $isOpen = false;
+
     public string $input = '';
+
     public array $messages = [];
+
     public array $attachments = [];
+
     public bool $stopped = false;
+
     public string $pendingAiBody = '';
+
     public ?int $sessionId = null;
+
     public bool $showHistory = false;
 
     #[Validate(['file', 'max:512000', 'mimes:pdf,xlsx,xls,docx,jpg,jpeg,png'])]
     public $uploadedFile;
 
     public $uploadedFiles = [];
+
     public bool $isBatchUploading = false;
 
     private array $aiMessages = [];
@@ -37,11 +46,11 @@ class AiChatWidget extends Component
 
     public function toggle(): void
     {
-        $this->isOpen = !$this->isOpen;
+        $this->isOpen = ! $this->isOpen;
 
         if ($this->isOpen && empty($this->messages)) {
             $this->messages[] = [
-                'role'    => 'assistant',
+                'role' => 'assistant',
                 'content' => 'Halo! Saya asisten AI DPUTR. Tanya apa saja soal proyek, laporan harian, pengadaan, atau personil.',
             ];
             $this->saveSession();
@@ -50,14 +59,14 @@ class AiChatWidget extends Component
 
     protected function loadSession(?int $id = null): void
     {
-        if (!$id) {
+        if (! $id) {
             $id = session()->pull('chat_active_session');
         }
         $session = $id
             ? ChatSession::where('id', $id)->where('user_id', auth()->id())->first()
             : ChatSession::where('user_id', auth()->id())->latest()->first();
 
-        if ($session && !empty($session->messages)) {
+        if ($session && ! empty($session->messages)) {
             $this->messages = $session->messages;
             $this->aiMessages = $session->ai_messages ?? $session->messages;
             $this->sessionId = $session->id;
@@ -94,6 +103,7 @@ class AiChatWidget extends Component
                 }
             }
         }
+
         return null;
     }
 
@@ -134,7 +144,7 @@ class AiChatWidget extends Component
 
     public function toggleHistory(): void
     {
-        $this->showHistory = !$this->showHistory;
+        $this->showHistory = ! $this->showHistory;
     }
 
     public function getSessions(): array
@@ -145,7 +155,7 @@ class AiChatWidget extends Component
             ->get(['id', 'title', 'created_at', 'updated_at'])
             ->map(fn ($s) => [
                 'id' => $s->id,
-                'title' => $s->title ?: 'Chat ' . $s->created_at->format('d M H:i'),
+                'title' => $s->title ?: 'Chat '.$s->created_at->format('d M H:i'),
                 'date' => $s->updated_at->diffForHumans(),
                 'active' => $s->id === $this->sessionId,
             ])
@@ -155,7 +165,9 @@ class AiChatWidget extends Component
     public function updatedUploadedFile(): void
     {
         $this->validate();
-        if (!$this->uploadedFile) return;
+        if (! $this->uploadedFile) {
+            return;
+        }
 
         $this->attachments[] = $this->ingestUpload($this->uploadedFile);
         $this->uploadedFile = null;
@@ -163,7 +175,9 @@ class AiChatWidget extends Component
 
     public function updatedUploadedFiles(): void
     {
-        if (empty($this->uploadedFiles)) return;
+        if (empty($this->uploadedFiles)) {
+            return;
+        }
         $this->isBatchUploading = true;
 
         foreach ($this->uploadedFiles as $file) {
@@ -175,43 +189,26 @@ class AiChatWidget extends Component
     }
 
     /**
-     * Simpan file, catat ChatUpload, extract teks-layer cepat (Smalot).
-     * Kalau PDF hasil scan → OCR berat dilempar ke queue (OcrChatUpload) supaya
-     * request web nggak nahan worker. Return ['name','path'] buat attachments.
+     * "Sekedar upload": cuma SIMPAN file + catat ChatUpload, lalu balik seketika.
+     * TIDAK ada pembacaan teks / OCR di sini (lazy) — itu ditunda sampai dokumen
+     * benar-benar dibutuhkan (saat user minta AI baca/parse). Pemicunya ada di
+     * AiChatService::ocrPending() yang men-dispatch ProbeChatUpload on-demand.
+     * Jadi file yang cuma dilampirkan/diarsipkan tak memakan worker / biaya OCR.
+     * Return ['name','path'] buat attachments.
      */
     private function ingestUpload($file): array
     {
-        $name   = $file->getClientOriginalName();
+        $name = $file->getClientOriginalName();
         $stored = $file->store('ai_chat_uploads', 'local');
-        $abs    = Storage::disk('local')->path($stored);
-        $mime   = $file->getMimeType();
-        $size   = $file->getSize();
+        $abs = Storage::disk('local')->path($stored);
 
-        $upload = \App\Models\ChatUpload::create([
-            'user_id'       => auth()->id(),
+        ChatUpload::create([
+            'user_id' => auth()->id(),
             'original_name' => $name,
-            'abs_path'      => $abs,
-            'mime'          => $mime,
-            'size_bytes'    => $size,
+            'abs_path' => $abs,
+            'mime' => $file->getMimeType(),
+            'size_bytes' => $file->getSize(),
         ]);
-
-        if (str_contains((string) $mime, 'pdf') || str_ends_with(strtolower($name), '.pdf')) {
-            $text = '';
-            try {
-                $text = trim((new \Smalot\PdfParser\Parser())->parseFile($abs)->getText());
-            } catch (\Throwable) {
-            }
-
-            $isScanned = mb_strlen($text) < 100;
-            $upload->update([
-                'ocr_text'       => mb_substr($text, 0, 15000),
-                'is_scanned_pdf' => $isScanned,
-            ]);
-
-            if ($isScanned) {
-                \App\Jobs\OcrChatUpload::dispatch($upload->id);
-            }
-        }
 
         return ['name' => $name, 'path' => $abs];
     }
@@ -232,14 +229,24 @@ class AiChatWidget extends Component
 
         $aiBody = $text;
         $displayBody = $text;
-        if (!empty($this->attachments)) {
+        if (! empty($this->attachments)) {
             $aiBody .= "\n\n[File terlampir]\n";
             $fileLabels = [];
             foreach ($this->attachments as $att) {
                 $aiBody .= "- {$att['name']} → {$att['path']}\n";
                 $fileLabels[] = "📎 {$att['name']}";
             }
-            $displayBody .= "\n\n" . implode("\n", $fileLabels);
+            $displayBody .= "\n\n".implode("\n", $fileLabels);
+        }
+
+        // $aiMessages bersifat private → Livewire tidak mem-persist-nya antar request.
+        // Reload riwayat dari sesi dulu supaya konteks percakapan (multi-turn) tidak hilang
+        // dan saveSession tidak menimpa history dengan hanya pesan terbaru.
+        if (empty($this->aiMessages) && $this->sessionId) {
+            $session = ChatSession::find($this->sessionId);
+            if ($session) {
+                $this->aiMessages = $session->ai_messages ?? $session->messages ?? [];
+            }
         }
 
         $this->pendingAiBody = $aiBody;
@@ -260,7 +267,7 @@ class AiChatWidget extends Component
 
     public function editMessage(int $index): void
     {
-        if (!isset($this->messages[$index]) || $this->messages[$index]['role'] !== 'user') {
+        if (! isset($this->messages[$index]) || $this->messages[$index]['role'] !== 'user') {
             return;
         }
 
@@ -293,7 +300,7 @@ class AiChatWidget extends Component
         try {
             $reply = app(AiChatService::class)->chat($this->aiMessages ?: $this->messages);
         } catch (\Throwable $e) {
-            $reply = 'Maaf, terjadi kesalahan: ' . $e->getMessage();
+            $reply = 'Maaf, terjadi kesalahan: '.$e->getMessage();
         }
 
         if ($this->stopped) {
@@ -301,6 +308,7 @@ class AiChatWidget extends Component
             $this->messages[] = ['role' => 'assistant', 'content' => '⏹ Dihentikan oleh user.'];
             $this->aiMessages[] = ['role' => 'assistant', 'content' => '⏹ Dihentikan oleh user.'];
             $this->saveSession();
+
             return;
         }
 

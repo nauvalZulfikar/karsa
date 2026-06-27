@@ -2,46 +2,69 @@
 
 namespace App\Services;
 
+use App\Jobs\OcrChatUpload;
+use App\Jobs\ParseChatDocument;
+use App\Jobs\ProbeChatUpload;
+use App\Models\ChatUpload;
 use App\Models\LaporanHarian;
+use App\Models\Master\Bidang;
+use App\Models\Master\JenisPekerjaan;
+use App\Models\Master\Perusahaan;
+use App\Models\Master\TenagaAhli;
 use App\Models\MilestonePekerjaan;
 use App\Models\Pekerjaan;
 use App\Models\PekerjaanPersonil;
+use App\Models\RealisasiPengadaan;
+use App\Models\RencanaPengadaan;
 use App\Models\SystemSetting;
 use App\Models\TerminPembayaran;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Spatie\Activitylog\Models\Activity;
 
 class AiChatService
 {
     private string $apiKey;
+
     private string $model;
+
     private string $apiUrl;
+
     private array $lastParseAggregated = [];
+
     private array $lastParseTruth = []; // G3b: field kritis hasil parse, untuk cross-check create
+
     private bool $primaryDown = false;  // FASE C: primary sudah ketahuan mati di sesi ini → langsung fallback
 
     public function __construct()
     {
         // FASE 0: backend dari config services.llm (default OpenAI). base_url root '/v1' + '/chat/completions'.
         $this->apiKey = config('services.llm.api_key', '');
-        $this->model  = config('services.llm.model', 'gpt-4o-mini');
-        $this->apiUrl = rtrim(config('services.llm.base_url', 'https://api.openai.com/v1'), '/') . '/chat/completions';
+        $this->model = config('services.llm.model', 'gpt-4o-mini');
+        $this->apiUrl = rtrim(config('services.llm.base_url', 'https://api.openai.com/v1'), '/').'/chat/completions';
     }
 
     private function storeAggregated(array $data): void
     {
-        cache()->put('ai_parse_aggregated_' . auth()->id(), $data, now()->addMinutes(30));
+        cache()->put('ai_parse_aggregated_'.auth()->id(), $data, now()->addMinutes(30));
         $this->lastParseAggregated = $data;
-        logger()->info('AI aggregated STORED: jadwal=' . count($data['jadwal_pelaksanaan'] ?? []) . ' keluaran=' . count($data['keluaran_kak'] ?? []));
+        logger()->info('AI aggregated STORED: jadwal='.count($data['jadwal_pelaksanaan'] ?? []).' keluaran='.count($data['keluaran_kak'] ?? []));
     }
 
     private function loadAggregated(): array
     {
-        if (!empty($this->lastParseAggregated)) {
-            logger()->info('AI aggregated LOADED from memory: jadwal=' . count($this->lastParseAggregated['jadwal_pelaksanaan'] ?? []));
+        if (! empty($this->lastParseAggregated)) {
+            logger()->info('AI aggregated LOADED from memory: jadwal='.count($this->lastParseAggregated['jadwal_pelaksanaan'] ?? []));
+
             return $this->lastParseAggregated;
         }
-        $cached = cache()->get('ai_parse_aggregated_' . auth()->id(), []);
-        logger()->info('AI aggregated LOADED from cache: jadwal=' . count($cached['jadwal_pelaksanaan'] ?? []));
+        $cached = cache()->get('ai_parse_aggregated_'.auth()->id(), []);
+        logger()->info('AI aggregated LOADED from cache: jadwal='.count($cached['jadwal_pelaksanaan'] ?? []));
+
         return $cached;
     }
 
@@ -52,8 +75,8 @@ class AiChatService
     /** G7: buang cache parse setelah proyek dibuat, biar tidak nyangkut ke proyek berikutnya. */
     private function clearAggregated(): void
     {
-        cache()->forget('ai_parse_aggregated_' . auth()->id());
-        cache()->forget('ai_parse_truth_' . auth()->id());
+        cache()->forget('ai_parse_aggregated_'.auth()->id());
+        cache()->forget('ai_parse_truth_'.auth()->id());
         $this->lastParseAggregated = [];
         $this->lastParseTruth = [];
     }
@@ -68,19 +91,21 @@ class AiChatService
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'cross_check_rab_vs_kontrak',
         ];
-        return !in_array($name, $readOnly, true);
+
+        return ! in_array($name, $readOnly, true);
     }
 
     /** G2: nilai_kontrak tidak boleh melebihi nilai_pagu (anti ketuker). */
     private function assertNilaiSane(array $input): ?array
     {
-        $pagu    = $input['nilai_pagu'] ?? null;
+        $pagu = $input['nilai_pagu'] ?? null;
         $kontrak = $input['nilai_kontrak'] ?? null;
         if ($pagu !== null && $kontrak !== null && (float) $kontrak > (float) $pagu) {
-            return ['error' => "Ditolak: nilai_kontrak (Rp " . number_format((float) $kontrak, 0, ',', '.')
-                . ") > nilai_pagu (Rp " . number_format((float) $pagu, 0, ',', '.')
-                . "). Pagu = anggaran APBD (lebih besar), nilai kontrak = hasil nego (lebih kecil). Kemungkinan ketukar — cek dokumen."];
+            return ['error' => 'Ditolak: nilai_kontrak (Rp '.number_format((float) $kontrak, 0, ',', '.')
+                .') > nilai_pagu (Rp '.number_format((float) $pagu, 0, ',', '.')
+                .'). Pagu = anggaran APBD (lebih besar), nilai kontrak = hasil nego (lebih kecil). Kemungkinan ketukar — cek dokumen.'];
         }
+
         return null;
     }
 
@@ -94,14 +119,16 @@ class AiChatService
         }
         $thisYear = (int) date('Y');
         foreach (['tanggal_spk', 'tanggal_mulai', 'tanggal_akhir'] as $tf) {
-            if (empty($input[$tf])) continue;
+            if (empty($input[$tf])) {
+                continue;
+            }
             $ts = strtotime((string) $input[$tf]);
             if ($ts === false) {
                 return ['error' => "Ditolak: {$tf} '{$input[$tf]}' bukan tanggal valid."];
             }
             $y = (int) date('Y', $ts);
             if ($y < 2015 || $y > $thisYear + 1) {
-                return ['error' => "Ditolak: {$tf} '{$input[$tf]}' di luar rentang wajar (2015–" . ($thisYear + 1) . "). Kemungkinan salah baca/tebak."];
+                return ['error' => "Ditolak: {$tf} '{$input[$tf]}' di luar rentang wajar (2015–".($thisYear + 1).'). Kemungkinan salah baca/tebak.'];
             }
         }
         foreach (['nilai_pagu', 'nilai_kontrak'] as $nf) {
@@ -112,26 +139,27 @@ class AiChatService
 
         // --- G3b: cocokkan vs kebenaran dokumen (kalau ada hasil parse di sesi ini) ---
         $truth = $this->loadParseTruth();
-        if (!empty($truth)) {
-            if (!empty($truth['no_spk']) && !empty($input['no_spk'])
+        if (! empty($truth)) {
+            if (! empty($truth['no_spk']) && ! empty($input['no_spk'])
                 && $this->normSpk((string) $input['no_spk']) !== $this->normSpk((string) $truth['no_spk'])) {
                 return ['error' => "Ditolak (anti-ngarang): no_spk '{$input['no_spk']}' beda dengan dokumen ('{$truth['no_spk']}'). Pakai yang dari dokumen. Kalau memang sengaja, panggil ulang dengan force_create=true."];
             }
             foreach (['nilai_kontrak', 'nilai_pagu'] as $nf) {
                 if (isset($truth[$nf], $input[$nf]) && $truth[$nf] !== null && $input[$nf] !== null
                     && abs((float) $input[$nf] - (float) $truth[$nf]) > 1) {
-                    return ['error' => "Ditolak (anti-ngarang): {$nf} (" . number_format((float) $input[$nf], 0, ',', '.')
-                        . ") beda dengan dokumen (" . number_format((float) $truth[$nf], 0, ',', '.')
-                        . "). Pakai angka dokumen, atau force_create=true kalau sengaja."];
+                    return ['error' => "Ditolak (anti-ngarang): {$nf} (".number_format((float) $input[$nf], 0, ',', '.')
+                        .') beda dengan dokumen ('.number_format((float) $truth[$nf], 0, ',', '.')
+                        .'). Pakai angka dokumen, atau force_create=true kalau sengaja.'];
                 }
             }
             foreach (['tanggal_spk', 'tanggal_mulai', 'tanggal_akhir'] as $tf) {
-                if (!empty($truth[$tf]) && !empty($input[$tf])
+                if (! empty($truth[$tf]) && ! empty($input[$tf])
                     && substr((string) $input[$tf], 0, 10) !== substr((string) $truth[$tf], 0, 10)) {
                     return ['error' => "Ditolak (anti-ngarang): {$tf} '{$input[$tf]}' beda dengan dokumen ('{$truth[$tf]}'). Pakai tanggal dokumen, atau force_create=true kalau sengaja."];
                 }
             }
         }
+
         return null;
     }
 
@@ -141,23 +169,34 @@ class AiChatService
         $src = $data['pekerjaan'] ?? $data; // kontrak nested di 'pekerjaan'; KAK/RAB flat
         $map = [];
         foreach (['no_spk', 'no_spmk', 'nama_pekerjaan', 'tanggal_spk', 'tanggal_mulai', 'tanggal_akhir', 'nilai_pagu', 'nilai_kontrak'] as $f) {
-            if (isset($src[$f]) && $src[$f] !== null && $src[$f] !== '') $map[$f] = $src[$f];
+            if (isset($src[$f]) && $src[$f] !== null && $src[$f] !== '') {
+                $map[$f] = $src[$f];
+            }
         }
-        if (empty($map['nilai_kontrak']) && !empty($data['total_kontrak'])) $map['nilai_kontrak'] = $data['total_kontrak']; // RAB
-        if (empty($map)) return;
+        if (empty($map['nilai_kontrak']) && ! empty($data['total_kontrak'])) {
+            $map['nilai_kontrak'] = $data['total_kontrak'];
+        } // RAB
+        if (empty($map)) {
+            return;
+        }
 
         $truth = $this->loadParseTruth();
         foreach ($map as $k => $v) {
-            if (!isset($truth[$k]) || $truth[$k] === null || $truth[$k] === '') $truth[$k] = $v;
+            if (! isset($truth[$k]) || $truth[$k] === null || $truth[$k] === '') {
+                $truth[$k] = $v;
+            }
         }
         $this->lastParseTruth = $truth;
-        cache()->put('ai_parse_truth_' . auth()->id(), $truth, now()->addMinutes(30));
+        cache()->put('ai_parse_truth_'.auth()->id(), $truth, now()->addMinutes(30));
     }
 
     private function loadParseTruth(): array
     {
-        if (!empty($this->lastParseTruth)) return $this->lastParseTruth;
-        return cache()->get('ai_parse_truth_' . auth()->id(), []);
+        if (! empty($this->lastParseTruth)) {
+            return $this->lastParseTruth;
+        }
+
+        return cache()->get('ai_parse_truth_'.auth()->id(), []);
     }
 
     private function normSpk(string $s): string
@@ -172,8 +211,8 @@ class AiChatService
         }
 
         $history = $this->buildHistory($messages);
-        $tools   = $this->toolsForRequest($history);
-        $system  = $this->getSystemPrompt();
+        $tools = $this->toolsForRequest($history);
+        $system = $this->getSystemPrompt();
 
         // Prepend system message
         $apiMessages = array_merge(
@@ -211,16 +250,16 @@ class AiChatService
             $apiMessages[] = $assistantMsg;
 
             foreach ($assistantMsg['tool_calls'] ?? [] as $toolCall) {
-                $name      = $toolCall['function']['name'];
-                $input     = json_decode($toolCall['function']['arguments'], true) ?? [];
+                $name = $toolCall['function']['name'];
+                $input = json_decode($toolCall['function']['arguments'], true) ?? [];
 
                 // G1: blokir tool tulis yang diulang persis (nama+argumen sama) dalam sesi ini.
-                $sig = $name . ':' . md5(json_encode($input));
+                $sig = $name.':'.md5(json_encode($input));
                 if ($this->isWriteTool($name) && isset($executedWrites[$sig])) {
                     $result = [
-                        'ok'     => false,
+                        'ok' => false,
                         'status' => 'duplicate_blocked',
-                        'pesan'  => "Aksi '{$name}' dengan data yang sama persis sudah dijalankan barusan — TIDAK diulang (anti-loop). Pakai hasil sebelumnya; jangan panggil lagi.",
+                        'pesan' => "Aksi '{$name}' dengan data yang sama persis sudah dijalankan barusan — TIDAK diulang (anti-loop). Pakai hasil sebelumnya; jangan panggil lagi.",
                     ];
                 } else {
                     $result = $this->executeTool($name, $input);
@@ -231,24 +270,24 @@ class AiChatService
 
                 // Capture download links from generators / create_pekerjaan
                 if (is_array($result)) {
-                    if (!empty($result['laporan_pendahuluan']['download_url'])) {
+                    if (! empty($result['laporan_pendahuluan']['download_url'])) {
                         $downloads[] = [
                             'label' => 'Laporan Pendahuluan',
-                            'url'   => $result['laporan_pendahuluan']['download_url'],
+                            'url' => $result['laporan_pendahuluan']['download_url'],
                         ];
                     }
-                    if (!empty($result['result']['download_url']) && !empty($result['tipe'])) {
+                    if (! empty($result['result']['download_url']) && ! empty($result['tipe'])) {
                         $downloads[] = [
                             'label' => $result['tipe'],
-                            'url'   => $result['result']['download_url'],
+                            'url' => $result['result']['download_url'],
                         ];
                     }
                 }
 
                 $apiMessages[] = [
-                    'role'         => 'tool',
+                    'role' => 'tool',
                     'tool_call_id' => $toolCall['id'],
-                    'content'      => json_encode($result, JSON_UNESCAPED_UNICODE),
+                    'content' => json_encode($result, JSON_UNESCAPED_UNICODE),
                 ];
             }
 
@@ -260,10 +299,10 @@ class AiChatService
 
         // Server-side append: deduplicate + append download chips kalau AI sudah ga sebut URL persis
         $downloads = collect($downloads)->unique('url')->values()->all();
-        if (!empty($downloads)) {
-            $missingLinks = array_filter($downloads, fn ($d) => !str_contains($reply, $d['url']));
-            if (!empty($missingLinks)) {
-                $reply = rtrim($reply) . "\n\n";
+        if (! empty($downloads)) {
+            $missingLinks = array_filter($downloads, fn ($d) => ! str_contains($reply, $d['url']));
+            if (! empty($missingLinks)) {
+                $reply = rtrim($reply)."\n\n";
                 foreach ($missingLinks as $d) {
                     $reply .= "📄 [**Unduh {$d['label']}**]({$d['url']})\n";
                 }
@@ -281,7 +320,7 @@ class AiChatService
         ));
 
         // OpenAI also requires first message to be user
-        while (!empty($history) && $history[0]['role'] !== 'user') {
+        while (! empty($history) && $history[0]['role'] !== 'user') {
             array_shift($history);
         }
 
@@ -301,15 +340,16 @@ class AiChatService
 
         try {
             return $this->requestLlm($messages, $tools, $this->apiUrl, $this->apiKey, $this->model);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+        } catch (ConnectionException $e) {
             if ($fallbackOk) {
                 $this->primaryDown = true;
                 logger()->warning("LLM failover: backend utama tak terjangkau ({$e->getMessage()}) → fallback ke OpenAI.");
+
                 return $this->callFallback($messages, $tools);
             }
             throw new \RuntimeException(
-                "Gagal hubungi backend AI setelah 3x percobaan ({$e->getMessage()}). " .
-                "Cek koneksi / Ollama, atau coba pakai VPN (ISP Indonesia kadang block api.openai.com)."
+                "Gagal hubungi backend AI setelah 3x percobaan ({$e->getMessage()}). ".
+                'Cek koneksi / Ollama, atau coba pakai VPN (ISP Indonesia kadang block api.openai.com).'
             );
         }
     }
@@ -325,8 +365,8 @@ class AiChatService
             );
         } catch (\Throwable $e2) {
             throw new \RuntimeException(
-                "Backend AI lokal mati dan fallback OpenAI juga gagal ({$e2->getMessage()}). " .
-                "Asisten AI sedang offline — coba lagi nanti."
+                "Backend AI lokal mati dan fallback OpenAI juga gagal ({$e2->getMessage()}). ".
+                'Asisten AI sedang offline — coba lagi nanti.'
             );
         }
     }
@@ -344,23 +384,24 @@ class AiChatService
                     ->withToken($key)
                     ->withHeaders(['User-Agent' => 'Karta-AI/1.0'])
                     ->post($url, [
-                        'model'       => $model,
-                        'max_tokens'  => 1024,
-                        'messages'    => $messages,
-                        'tools'       => $tools,
+                        'model' => $model,
+                        'max_tokens' => 1024,
+                        'messages' => $messages,
+                        'tools' => $tools,
                         'tool_choice' => 'auto',
                     ]);
 
-                if (!$response->successful()) {
+                if (! $response->successful()) {
                     $error = $response->json('error.message', $response->body());
                     throw new \RuntimeException("LLM API: {$error}");
                 }
 
                 return $response->json();
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            } catch (ConnectionException $e) {
                 $lastError = $e;
                 if ($attempt < 3) {
                     sleep($attempt * 2); // 2s, 4s
+
                     continue;
                 }
                 throw $e; // serahkan ke caller (failover handler)
@@ -373,7 +414,7 @@ class AiChatService
     private function getSystemPrompt(): string
     {
         $instansi = SystemSetting::get('nama_instansi', 'DPUTR Kabupaten Bandung');
-        $tahun    = SystemSetting::get('tahun_anggaran_aktif', date('Y'));
+        $tahun = SystemSetting::get('tahun_anggaran_aktif', date('Y'));
         $userName = auth()->user()?->name ?? 'pengguna';
 
         // FASE D: model lokal (Ollama/Qwen) lambat memproses prompt panjang tiap roundtrip.
@@ -382,86 +423,155 @@ class AiChatService
         // prompt penuh di bawah (perilaku teruji tidak berubah).
         if (config('services.llm.driver', 'openai') === 'ollama') {
             return "/no_think\n"
-                . "Kamu asisten AI Project Management {$instansi}. Tahun anggaran {$tahun}. User: {$userName}. "
-                . "Jawab Bahasa Indonesia, singkat dan jelas.\n"
-                . "Tools tersedia: lihat/cari proyek, laporan harian, personil, milestone, termin, pengadaan, vendor, dokumen, audit log; "
-                . "parse PDF (KAK/Kontrak/RAB/Penawaran) + OCR; bikin/edit/hapus proyek, assign vendor/personil, generate dokumen, kirim WA.\n"
-                . "ATURAN:\n"
-                . "- Lihat data (get_/list_/cari): langsung panggil tool. Ubah data (create/update/delete/approve/generate): konfirmasi dulu; "
-                . "kalau user bilang 'tanpa konfirmasi'/'langsung proses' pakai force_create=true.\n"
-                . "- HANYA pakai data dari hasil tool. JANGAN menebak nama/no_spk/nilai/tanggal. Kalau tool tidak mengembalikan data, bilang tidak ada / tidak terbaca.\n"
-                . "- Bikin proyek dari dokumen: panggil parse_multiple_docs (>=2 file) atau parse_*_pdf, ringkas, lalu create_pekerjaan dgn field hasil parse (jadwal/termin/milestone auto-merge server).\n"
-                . "- Format uang Rupiah (Rp). Jangan ulang tool tulis yang argumennya sama.\n"
+                ."Kamu asisten AI Project Management {$instansi}. Tahun anggaran {$tahun}. User: {$userName}. "
+                ."Jawab Bahasa Indonesia, singkat dan jelas.\n"
+                .'Tools tersedia: lihat/cari proyek, laporan harian, personil, milestone, termin, pengadaan, vendor, dokumen, audit log; '
+                ."parse PDF (KAK/Kontrak/RAB/Penawaran) + OCR; bikin/edit/hapus proyek, assign vendor/personil, generate dokumen, kirim WA.\n"
+                ."ATURAN:\n"
+                .'- Lihat data (get_/list_/cari): langsung panggil tool. Ubah data (create/update/delete/approve/generate): konfirmasi dulu; '
+                ."kalau user bilang 'tanpa konfirmasi'/'langsung proses' pakai force_create=true.\n"
+                ."- HANYA pakai data dari hasil tool. JANGAN menebak nama/no_spk/nilai/tanggal. Kalau tool tidak mengembalikan data, bilang tidak ada / tidak terbaca.\n"
+                ."- Bikin proyek dari dokumen: panggil parse_multiple_docs (>=2 file) atau parse_*_pdf, ringkas, lalu create_pekerjaan dgn field hasil parse (jadwal/termin/milestone auto-merge server).\n"
+                ."- Format uang Rupiah (Rp). Jangan ulang tool tulis yang argumennya sama.\n"
                 // FASE D #6 few-shot: qwen sering salah isi argumen get_pekerjaan_list (masukin
                 // kalimat penuh ke 'search' / nambah filter status) -> hasil kosong -> ngaku
                 // "tidak ada proyek". Contoh konkret ini memperbaiki wobble itu (benchmark Q2/Q5).
-                . "CONTOH ARGUMEN TOOL (WAJIB ikuti pola):\n"
-                . "- \"sebutkan semua proyek\" / \"ada proyek apa aja\" / \"berapa proyek\" -> get_pekerjaan_list dengan argumen KOSONG {}. JANGAN isi 'search' dgn kalimat (\"semua proyek\") dan JANGAN tambah 'status_waktu' kalau user tak minta status — itu bikin hasil kosong.\n"
-                . "- \"vendor/nilai/detail proyek KAJIAN GEOTEKNIK\" -> get_pekerjaan_list dgn search=\"geoteknik\" (SATU kata kunci inti saja, bukan kalimat penuh).\n"
-                . "- Kalau tool balik kosong, coba SEKALI lagi get_pekerjaan_list {} tanpa filter SEBELUM bilang \"tidak ada\".";
+                ."CONTOH ARGUMEN TOOL (WAJIB ikuti pola):\n"
+                ."- \"sebutkan semua proyek\" / \"ada proyek apa aja\" / \"berapa proyek\" -> get_pekerjaan_list dengan argumen KOSONG {}. JANGAN isi 'search' dgn kalimat (\"semua proyek\") dan JANGAN tambah 'status_waktu' kalau user tak minta status — itu bikin hasil kosong.\n"
+                ."- \"vendor/nilai/detail proyek KAJIAN GEOTEKNIK\" -> get_pekerjaan_list dgn search=\"geoteknik\" (SATU kata kunci inti saja, bukan kalimat penuh).\n"
+                .'- Kalau tool balik kosong, coba SEKALI lagi get_pekerjaan_list {} tanpa filter SEBELUM bilang "tidak ada".';
         }
 
         return "Kamu adalah asisten AI untuk sistem Project Management {$instansi}. "
-            . "Tahun anggaran aktif: {$tahun}. User saat ini: {$userName}. "
-            . "Jawab dalam Bahasa Indonesia yang singkat, ramah, dan jelas. "
-            . "Kamu PUNYA AKSES penuh untuk: bikin/edit/hapus proyek, assign vendor & personil, submit/approve laporan harian + realisasi + termin, generate laporan & invoice & surat, parse PDF KAK/Kontrak/RAB/Penawaran, manage user, kirim WA, dll. "
-            . "User bisa drag-drop PDF/Excel langsung ke chat. File ter-PERSIST di database — bisa di-reference balik kapan aja. "
-            . "Kalau user bilang 'file yg tadi gua upload' atau sejenis, JANGAN bilang gak ada — panggil list_uploaded_files atau find_uploaded_file untuk cari, lalu pakai path-nya. "
-            . "File baru juga muncul di pesan user (format: '[File terlampir] - filename → /path/to/file'). Pakai path itu sebagai file_path untuk parse_*. "
-            . "Kalau parse_*_pdf return text kosong / hanya whitespace, kemungkinan PDF hasil scan — panggil ocr_pdf untuk OCR via vision, lalu lanjutkan parsing dengan teks hasil OCR. "
-            . "ALUR BIKIN PROYEK BARU (WAJIB IKUTI INI):\n"
-            . "  STEP 0 (auto-detect): kalau user attach file di pesan SAMA dengan request 'bikin proyek', langsung ke STEP 2 — pakai file itu, tidak perlu nanya.\n"
-            . "  STEP 1 (kalau gak ada file): tanya user upload 4 dokumen: KAK (wajib), Kontrak/SPK (opsional), Penawaran vendor (opsional), RAB Negosiasi (opsional). Sebutkan: 'Mohon drag-drop ke chat: KAK (wajib), lalu Kontrak/Penawaran/RAB kalau sudah ada.' Tunggu user upload.\n"
-            . "  STEP 2: kalau ada >=2 file ter-attach, WAJIB panggil parse_multiple_docs SEKALI dengan semua dokumen (jauh lebih cepat dari panggil parse_* satu-satu). Kalau cuma 1 file, panggil parser spesifik (parse_kak_pdf/parse_kontrak_pdf/parse_rab_pdf/parse_penawaran_pdf). Kalau ada parser return text kosong, panggil ocr_pdf fallback.\n"
-            . "  STEP 3: rangkum SEMUA data hasil parse dalam 1 pesan terstruktur (nama, lokasi, pagu, vendor, jadwal, tim, RAB items). Tampilkan ke user.\n"
-            . "  STEP 3b (ANTI-HALUSINASI - SANGAT PENTING): hanya pakai data yang BENAR-BENAR muncul di hasil parse_*. JANGAN tebak, JANGAN gunakan contoh dari proyek lain, JANGAN copy nama dari pekerjaan_list. Kalau nama_pekerjaan / nilai_kontrak / vendor / no_spk TIDAK ADA di hasil parser (null/kosong), STOP — lapor ke user: 'Dokumen [X] tidak terbaca dengan baik, mohon upload ulang dengan kualitas lebih jelas atau tambahkan info manual'. JANGAN buat pekerjaan dengan data fiktif.\n"
-            . "  STEP 3c (TANGGAL & NO_SPK — PALING SERING SALAH): tanggal_spk, tanggal_mulai, tanggal_akhir, no_spk, no_spmk, nilai_kontrak HARUS EXACT copy dari hasil parse_kontrak_pdf. JANGAN ubah tahun/bulan/digit, JANGAN tebak, JANGAN ambil dari hasil pekerjaan_list atau dari warning similar_name_found. Kalau warning similar_name_found return existing project dengan no_spk berbeda, TETAP pakai no_spk dari parse_kontrak (bukan dari warning). Kalau di multi-turn (user confirm force_create=true di turn berikutnya), TETAP pakai SEMUA field EXACT sama seperti yang lo dapet di parse_kontrak turn sebelumnya. Data dari warning HANYA buat info ke user, BUKAN buat di-copy ke create_pekerjaan input.\n"
-            . "  STEP 3e (PAGU vs NILAI KONTRAK — JANGAN SAMAKAN): KAK punya field 'nilai_pagu' (anggaran total dari APBD, biasanya angka bulat). Kontrak/SPK punya 'nilai_kontrak' (nilai final setelah nego, biasanya lebih rendah dari pagu). KEDUANYA WAJIB ditampilkan SEPARATE di ringkasan summary user. Format: 'Pagu (KAK): Rp {nilai_pagu} | Nilai Kontrak: Rp {nilai_kontrak}'. JANGAN pakai nilai_kontrak buat nilai_pagu atau sebaliknya — itu 2 angka berbeda yang dua-duanya harus muncul. Kalau cuma KAK yang ada, tampilkan 'Pagu' aja. Kalau cuma kontrak yang ada, tampilkan 'Nilai Kontrak' aja.\n"
-            . "  STEP 3d (TERMIN & MILESTONES & JADWAL — WAJIB FORWARD KE create_pekerjaan):\n"
-            . "    parse_multiple_docs return field 'aggregated' yang berisi 4 array SIAP PAKAI:\n"
-            . "    - aggregated.termin_pembayaran → pass langsung sebagai 'termin_pembayaran'\n"
-            . "    - aggregated.milestones → pass langsung sebagai 'milestones'\n"
-            . "    - aggregated.jadwal_pelaksanaan → pass langsung sebagai 'jadwal_pelaksanaan'\n"
-            . "    - aggregated.keluaran_kak → pass langsung sebagai 'keluaran_kak'\n"
-            . "    COPY-PASTE semua 4 array dari aggregated ke create_pekerjaan input. JANGAN skip, JANGAN generate sendiri.\n"
-            . "  STEP 3f (LOKASI — WAJIB FORWARD): Hasil parse_kak_pdf return field 'lokasi_pekerjaan' (contoh 'Desa Lebakmuncang, Kec. Ciwidey, Kabupaten Bandung'). WAJIB pass field tsb ke create_pekerjaan sebagai 'lokasi'. Composer butuh ini untuk nulis Latar Belakang + Lokasi section di laporan dengan lokasi spesifik (bukan fallback generic 'Kabupaten Bandung').\n"
-            . "  STEP 4: PANGGIL create_pekerjaan dengan SEMUA field yang tersedia (termasuk termin_pembayaran + milestones array kalau ada).\n"
-            . "    PENTING: Kalau user bilang 'tanpa konfirmasi' / 'langsung proses' / 'auto-execute' → SELALU pass force_create=true di create_pekerjaan. Jangan tanya konfirmasi apapun.\n"
-            . "    Sistem akan auto-cek duplikasi:\n"
-            . "    - Kalau return 'duplicate_spk': stop, info ke user proyek dengan SPK ini sudah ada.\n"
-            . "    - Kalau return 'similar_name_found' DAN force_create=false: tampilkan list yang mirip, tanya user. Kalau user yakin, panggil ulang dengan force_create=true.\n"
-            . "    - Kalau return 'similar_name_found' DAN force_create=true: TIDAK MUNGKIN terjadi (sistem skip warning kalau force). Kalau terjadi, ada bug.\n"
-            . "    - Kalau sukses: lanjut STEP 5.\n"
-            . "  STEP 5: setelah pekerjaan dibuat, OTOMATIS panggil ini berurutan (tanpa nanya ulang user untuk tiap step, cukup lapor hasil di akhir):\n"
-            . "    a. assign_vendor (kalau vendor ada di hasil parse)\n"
-            . "    b. assign_personil untuk tiap personil di RAB/Penawaran (loop)\n"
-            . "    c. create_rencana_pengadaan dengan items dari RAB (bulk)\n"
-            . "    d. cross_check_rab_vs_kontrak — kalau ada mismatch, warning ke user\n"
-            . "  STEP 6: kasih ringkasan final ke user: ID proyek baru, vendor di-assign, jumlah personil, jumlah item RAB, status validasi. KALAU response create_pekerjaan ada field 'laporan_pendahuluan.download_url', SELALU tampilkan sebagai link markdown clickable di akhir reply: '\\n\\n📄 [**Unduh Laporan Pendahuluan**](URL_DI_SINI)' — pakai format markdown link bukan plain URL.\n"
-            . "ALUR LAINNYA: untuk request 'bikin invoice / laporan' juga ikuti pattern: parse → confirm → execute → report.\n"
-            . "DUPLIKASI HANDLING (ANTI-LOOP — WAJIB IKUTI EXACT):\n"
-            . "  CASE A: warning 'similar_name_found' (ada proyek mirip):\n"
-            . "    Turn 1 (warning received): tampilkan ringkasan ke user — 'Ada proyek mirip: [nama-nama]. Mau pakai existing (sebut ID) atau bikin baru?' Tunggu user jawab.\n"
-            . "    Turn 2 (user jawab):\n"
-            . "      Kalau user jawab apapun yang artinya 'BIKIN BARU' (iya, ya, bikin baru, baru aja, new, force, lanjut, OK lanjut, ya proceed, gua mau bikin baru, dll): WAJIB PANGGIL create_pekerjaan SEKALI dengan force_create=true DAN semua field EXACT sama seperti turn sebelumnya. JANGAN tanya lagi pertanyaan yang sama. JANGAN return warning lagi.\n"
-            . "      Kalau user jawab 'PAKAI EXISTING' (pakai yang ada, pakai id X, yg lama aja, existing, gak usah bikin baru, update aja, pakai #X): JANGAN panggil create_pekerjaan. Langsung lanjut ke STEP 5 (assign_vendor, assign_personil, dll) menggunakan pekerjaan_id dari warning.\n"
-            . "  CASE B: error 'duplicate_spk' (SPK sudah ada di pekerjaan lain):\n"
-            . "    Turn 1 (error received): info ke user — 'Proyek dengan SPK X sudah ada (ID Y). Mau update Y, atau cancel dan ganti SPK?' Tunggu user jawab.\n"
-            . "    Turn 2 (user jawab):\n"
-            . "      Kalau user pilih 'UPDATE / pakai existing / lanjut / OK': JANGAN panggil create_pekerjaan lagi. Pakai pekerjaan_id Y dari error response, lanjut ke STEP 5 (assign vendor + personil + RAB) untuk pekerjaan Y. Juga kalau perlu update field, panggil update_pekerjaan(pekerjaan_id=Y, ...) sekali.\n"
-            . "      Kalau user pilih 'GANTI SPK': tanya user 'Mohon kasih nomor SPK baru'. Jangan auto-bikin, tunggu user kasih SPK baru.\n"
-            . "  ATURAN UMUM: SETELAH user jawab di turn 2, JANGAN PERNAH tanya pertanyaan yang sama lagi. Kalau yakin user mau bikin baru, langsung action. Kalau yakin user mau pakai existing, langsung lanjut. Hanya tanya ulang kalau user jawab benar-benar gak nyambung/ambigu (misal 'apa?').\n"
-            . "PENCARIAN PROYEK (PENTING): saat get_pekerjaan_list, isi 'search' dengan 1-2 KATA KUNCI paling unik dari nama proyek (mis. user tanya 'DED Jalan Cileunyi' -> search='Cileunyi'; 'Rehabilitasi Bendung Cisangkuy' -> search='Cisangkuy'), JANGAN kirim kalimat/frasa panjang. JANGAN tambah filter 'status_waktu' kecuali user memang minta status tertentu. Kalau hasil kosong, WAJIB coba SEKALI lagi get_pekerjaan_list {} (tanpa argumen) lalu cocokkan sendiri SEBELUM bilang 'tidak ada'.\n"
-            . "PERTANYAAN SUPERLATIF (paling besar/kecil/mahal/murah, tertinggi/terendah, TERLAMA/TERCEPAT durasi, 'proyek mana yang paling ...'): JANGAN bandingkan angka sendiri. Pakai get_pekerjaan_list dengan sort_by + order + limit=1: termahal -> sort_by='nilai_kontrak' order='desc'; termurah -> sort_by='nilai_kontrak' order='asc' (server menaruh nilai Rp 0/belum terisi paling akhir); pagu terbesar/terkecil -> sort_by='nilai_pagu'; progres -> sort_by='progres'; durasi paling lama -> sort_by='durasi' order='desc'; durasi paling pendek/cepat -> sort_by='durasi' order='asc'. Ambil hasil teratas. (Kalau beberapa proyek seri di nilai sama, sebutkan semuanya.)\n"
-            . "TOTAL / RATA-RATA / JUMLAH (total nilai kontrak, total pagu anggaran, rata-rata progres, jumlah proyek, jumlah tenaga ahli, jumlah vendor/perusahaan): JANGAN jumlah/hitung manual dari daftar (rawan salah). Panggil get_dashboard_stats dan pakai angkanya langsung: total_nilai_kontrak, total_nilai_pagu, rata_rata_progres, total_pekerjaan, total_tenaga_ahli, total_perusahaan.\n"
-            . "AGREGAT LAIN (daftar yang memenuhi syarat, mis. 'belum 100%', 'nilai 0'): get_pekerjaan_list {} TANPA filter status_waktu, lalu saring sendiri pakai field angka 'nilai_kontrak_num'/'nilai_pagu_num'/'progres_num'. JANGAN pakai filter 'status_waktu' untuk pertanyaan nilai/progres.\n"
-            . "PROYEK BERDASARKAN VENDOR ('proyek yang dikerjakan oleh PT/CV X'): panggil get_pekerjaan_list dengan search berisi 1 kata unik dari nama vendor (mis. 'TACIBA', bukan 'CV TACIBA SHIGOTO NUSANTARA') — search sudah mencakup nama perusahaan.\n"
-            . "TERMIN LINTAS PROYEK ('termin yang sudah diajukan / menunggu pembayaran' tanpa sebut proyek): panggil list_termin dengan status='diajukan' (JANGAN loop get_termin_pekerjaan, JANGAN minta ID). Termin status 'draft' = BELUM diajukan — jangan disebut sudah diajukan. Untuk termin satu proyek tertentu, get_termin_pekerjaan(pekerjaan_id) atau list_termin(pekerjaan_id).\n"
-            . "JANGAN CAMPUR ISTILAH: 'laporan harian' = kehadiran/aktivitas harian vendor di lapangan -> get_laporan_harian (BUKAN termin). 'termin' = tahap pembayaran -> list_termin / get_termin_pekerjaan. Pertanyaan 'laporan harian ... minggu ini' WAJIB pakai get_laporan_harian, jangan list_termin.\n"
-            . "RENCANA PENGADAAN: untuk 'proyek mana yang punya rencana pengadaan' panggil get_rencana_pengadaan TANPA argumen (balikin hanya proyek yang benar-benar punya). Untuk rincian item satu proyek, panggil get_rencana_pengadaan dengan pekerjaan_id. JANGAN samakan dengan termin/daftar proyek biasa, dan JANGAN klaim semua proyek punya pengadaan.\n"
-            . "Selalu KONFIRMASI dulu sebelum action yang ubah data (create/update/delete/approve/generate). Untuk read-only (get_*, list_*, search_*) langsung saja. "
-            . "Format angka uang dalam Rupiah (Rp) dengan titik pemisah ribuan. "
-            . "Status traffic light: aman (hijau), waspada (kuning), kritis/terlambat (merah), selesai (abu-abu).";
+            ."Tahun anggaran aktif: {$tahun}. User saat ini: {$userName}. "
+            .'Jawab dalam Bahasa Indonesia yang singkat, ramah, dan jelas. '
+            .'Kamu PUNYA AKSES penuh untuk: bikin/edit/hapus proyek, assign vendor & personil, submit/approve laporan harian + realisasi + termin, generate laporan & invoice & surat, parse PDF KAK/Kontrak/RAB/Penawaran, manage user, kirim WA, dll. '
+            .'User bisa drag-drop PDF/Excel langsung ke chat. File ter-PERSIST di database — bisa di-reference balik kapan aja. '
+            ."Kalau user bilang 'file yg tadi gua upload' atau sejenis, JANGAN bilang gak ada — panggil list_uploaded_files atau find_uploaded_file untuk cari, lalu pakai path-nya. "
+            ."File baru juga muncul di pesan user (format: '[File terlampir] - filename → /path/to/file'). Pakai path itu sebagai file_path untuk parse_*. "
+            .'Kalau parse_*_pdf return text kosong / hanya whitespace, kemungkinan PDF hasil scan — panggil ocr_pdf untuk OCR via vision, lalu lanjutkan parsing dengan teks hasil OCR. '
+            ."ALUR BIKIN PROYEK BARU (WAJIB IKUTI INI):\n"
+            ."  STEP 0 (auto-detect): kalau user attach file di pesan SAMA dengan request 'bikin proyek', langsung ke STEP 2 — pakai file itu, tidak perlu nanya.\n"
+            ."  STEP 1 (kalau gak ada file): tanya user upload 4 dokumen: KAK (wajib), Kontrak/SPK (opsional), Penawaran vendor (opsional), RAB Negosiasi (opsional). Sebutkan: 'Mohon drag-drop ke chat: KAK (wajib), lalu Kontrak/Penawaran/RAB kalau sudah ada.' Tunggu user upload.\n"
+            ."  STEP 2: kalau ada >=2 file ter-attach, WAJIB panggil parse_multiple_docs SEKALI dengan semua dokumen (jauh lebih cepat dari panggil parse_* satu-satu). Kalau cuma 1 file, panggil parser spesifik (parse_kak_pdf/parse_kontrak_pdf/parse_rab_pdf/parse_penawaran_pdf). Kalau ada parser return text kosong, panggil ocr_pdf fallback.\n"
+            ."  STEP 3: rangkum SEMUA data hasil parse dalam 1 pesan terstruktur (nama, lokasi, pagu, vendor, jadwal, tim, RAB items). Tampilkan ke user.\n"
+            ."  STEP 3b (ANTI-HALUSINASI - SANGAT PENTING): hanya pakai data yang BENAR-BENAR muncul di hasil parse_*. JANGAN tebak, JANGAN gunakan contoh dari proyek lain, JANGAN copy nama dari pekerjaan_list. Kalau nama_pekerjaan / nilai_kontrak / vendor / no_spk TIDAK ADA di hasil parser (null/kosong), STOP — lapor ke user: 'Dokumen [X] tidak terbaca dengan baik, mohon upload ulang dengan kualitas lebih jelas atau tambahkan info manual'. JANGAN buat pekerjaan dengan data fiktif.\n"
+            ."  STEP 3c (TANGGAL & NO_SPK — PALING SERING SALAH): tanggal_spk, tanggal_mulai, tanggal_akhir, no_spk, no_spmk, nilai_kontrak HARUS EXACT copy dari hasil parse_kontrak_pdf. JANGAN ubah tahun/bulan/digit, JANGAN tebak, JANGAN ambil dari hasil pekerjaan_list atau dari warning similar_name_found. Kalau warning similar_name_found return existing project dengan no_spk berbeda, TETAP pakai no_spk dari parse_kontrak (bukan dari warning). Kalau di multi-turn (user confirm force_create=true di turn berikutnya), TETAP pakai SEMUA field EXACT sama seperti yang lo dapet di parse_kontrak turn sebelumnya. Data dari warning HANYA buat info ke user, BUKAN buat di-copy ke create_pekerjaan input.\n"
+            ."  STEP 3e (PAGU vs NILAI KONTRAK — JANGAN SAMAKAN): KAK punya field 'nilai_pagu' (anggaran total dari APBD, biasanya angka bulat). Kontrak/SPK punya 'nilai_kontrak' (nilai final setelah nego, biasanya lebih rendah dari pagu). KEDUANYA WAJIB ditampilkan SEPARATE di ringkasan summary user. Format: 'Pagu (KAK): Rp {nilai_pagu} | Nilai Kontrak: Rp {nilai_kontrak}'. JANGAN pakai nilai_kontrak buat nilai_pagu atau sebaliknya — itu 2 angka berbeda yang dua-duanya harus muncul. Kalau cuma KAK yang ada, tampilkan 'Pagu' aja. Kalau cuma kontrak yang ada, tampilkan 'Nilai Kontrak' aja.\n"
+            ."  STEP 3d (TERMIN & MILESTONES & JADWAL — WAJIB FORWARD KE create_pekerjaan):\n"
+            ."    parse_multiple_docs return field 'aggregated' yang berisi 4 array SIAP PAKAI:\n"
+            ."    - aggregated.termin_pembayaran → pass langsung sebagai 'termin_pembayaran'\n"
+            ."    - aggregated.milestones → pass langsung sebagai 'milestones'\n"
+            ."    - aggregated.jadwal_pelaksanaan → pass langsung sebagai 'jadwal_pelaksanaan'\n"
+            ."    - aggregated.keluaran_kak → pass langsung sebagai 'keluaran_kak'\n"
+            ."    COPY-PASTE semua 4 array dari aggregated ke create_pekerjaan input. JANGAN skip, JANGAN generate sendiri.\n"
+            ."  STEP 3f (LOKASI — WAJIB FORWARD): Hasil parse_kak_pdf return field 'lokasi_pekerjaan' (contoh 'Desa Lebakmuncang, Kec. Ciwidey, Kabupaten Bandung'). WAJIB pass field tsb ke create_pekerjaan sebagai 'lokasi'. Composer butuh ini untuk nulis Latar Belakang + Lokasi section di laporan dengan lokasi spesifik (bukan fallback generic 'Kabupaten Bandung').\n"
+            ."  STEP 4: PANGGIL create_pekerjaan dengan SEMUA field yang tersedia (termasuk termin_pembayaran + milestones array kalau ada).\n"
+            ."    PENTING: Kalau user bilang 'tanpa konfirmasi' / 'langsung proses' / 'auto-execute' → SELALU pass force_create=true di create_pekerjaan. Jangan tanya konfirmasi apapun.\n"
+            ."    Sistem akan auto-cek duplikasi:\n"
+            ."    - Kalau return 'duplicate_spk': stop, info ke user proyek dengan SPK ini sudah ada.\n"
+            ."    - Kalau return 'similar_name_found' DAN force_create=false: tampilkan list yang mirip, tanya user. Kalau user yakin, panggil ulang dengan force_create=true.\n"
+            ."    - Kalau return 'similar_name_found' DAN force_create=true: TIDAK MUNGKIN terjadi (sistem skip warning kalau force). Kalau terjadi, ada bug.\n"
+            ."    - Kalau sukses: lanjut STEP 5.\n"
+            ."  STEP 5: setelah pekerjaan dibuat, OTOMATIS panggil ini berurutan (tanpa nanya ulang user untuk tiap step, cukup lapor hasil di akhir):\n"
+            ."    a. assign_vendor (kalau vendor ada di hasil parse)\n"
+            ."    b. assign_personil untuk tiap personil di RAB/Penawaran (loop)\n"
+            ."    c. create_rencana_pengadaan dengan items dari RAB (bulk)\n"
+            ."    d. cross_check_rab_vs_kontrak — kalau ada mismatch, warning ke user\n"
+            ."  STEP 6: kasih ringkasan final ke user: ID proyek baru, vendor di-assign, jumlah personil, jumlah item RAB, status validasi. KALAU response create_pekerjaan ada field 'laporan_pendahuluan.download_url', SELALU tampilkan sebagai link markdown clickable di akhir reply: '\\n\\n📄 [**Unduh Laporan Pendahuluan**](URL_DI_SINI)' — pakai format markdown link bukan plain URL.\n"
+            ."ALUR LAINNYA: untuk request 'bikin invoice / laporan' juga ikuti pattern: parse → confirm → execute → report.\n"
+            ."DUPLIKASI HANDLING (ANTI-LOOP — WAJIB IKUTI EXACT):\n"
+            ."  CASE A: warning 'similar_name_found' (ada proyek mirip):\n"
+            ."    Turn 1 (warning received): tampilkan ringkasan ke user — 'Ada proyek mirip: [nama-nama]. Mau pakai existing (sebut ID) atau bikin baru?' Tunggu user jawab.\n"
+            ."    Turn 2 (user jawab):\n"
+            ."      Kalau user jawab apapun yang artinya 'BIKIN BARU' (iya, ya, bikin baru, baru aja, new, force, lanjut, OK lanjut, ya proceed, gua mau bikin baru, dll): WAJIB PANGGIL create_pekerjaan SEKALI dengan force_create=true DAN semua field EXACT sama seperti turn sebelumnya. JANGAN tanya lagi pertanyaan yang sama. JANGAN return warning lagi.\n"
+            ."      Kalau user jawab 'PAKAI EXISTING' (pakai yang ada, pakai id X, yg lama aja, existing, gak usah bikin baru, update aja, pakai #X): JANGAN panggil create_pekerjaan. Langsung lanjut ke STEP 5 (assign_vendor, assign_personil, dll) menggunakan pekerjaan_id dari warning.\n"
+            ."  CASE B: error 'duplicate_spk' (SPK sudah ada di pekerjaan lain):\n"
+            ."    Turn 1 (error received): info ke user — 'Proyek dengan SPK X sudah ada (ID Y). Mau update Y, atau cancel dan ganti SPK?' Tunggu user jawab.\n"
+            ."    Turn 2 (user jawab):\n"
+            ."      Kalau user pilih 'UPDATE / pakai existing / lanjut / OK': JANGAN panggil create_pekerjaan lagi. Pakai pekerjaan_id Y dari error response, lanjut ke STEP 5 (assign vendor + personil + RAB) untuk pekerjaan Y. Juga kalau perlu update field, panggil update_pekerjaan(pekerjaan_id=Y, ...) sekali.\n"
+            ."      Kalau user pilih 'GANTI SPK': tanya user 'Mohon kasih nomor SPK baru'. Jangan auto-bikin, tunggu user kasih SPK baru.\n"
+            ."  ATURAN UMUM: SETELAH user jawab di turn 2, JANGAN PERNAH tanya pertanyaan yang sama lagi. Kalau yakin user mau bikin baru, langsung action. Kalau yakin user mau pakai existing, langsung lanjut. Hanya tanya ulang kalau user jawab benar-benar gak nyambung/ambigu (misal 'apa?').\n"
+            ."PENCARIAN PROYEK (PENTING): saat get_pekerjaan_list, isi 'search' dengan 1-2 KATA KUNCI paling unik dari nama proyek (mis. user tanya 'DED Jalan Cileunyi' -> search='Cileunyi'; 'Rehabilitasi Bendung Cisangkuy' -> search='Cisangkuy'), JANGAN kirim kalimat/frasa panjang. JANGAN tambah filter 'status_waktu' kecuali user memang minta status tertentu. Kalau hasil kosong, WAJIB coba SEKALI lagi get_pekerjaan_list {} (tanpa argumen) lalu cocokkan sendiri SEBELUM bilang 'tidak ada'.\n"
+            ."PERTANYAAN SUPERLATIF (paling besar/kecil/mahal/murah, tertinggi/terendah, TERLAMA/TERCEPAT durasi, 'proyek mana yang paling ...'): JANGAN bandingkan angka sendiri. Pakai get_pekerjaan_list dengan sort_by + order + limit=1: termahal -> sort_by='nilai_kontrak' order='desc'; termurah -> sort_by='nilai_kontrak' order='asc' (server menaruh nilai Rp 0/belum terisi paling akhir); pagu terbesar/terkecil -> sort_by='nilai_pagu'; progres -> sort_by='progres'; durasi paling lama -> sort_by='durasi' order='desc'; durasi paling pendek/cepat -> sort_by='durasi' order='asc'. Ambil hasil teratas. (Kalau beberapa proyek seri di nilai sama, sebutkan semuanya.)\n"
+            ."TOTAL / RATA-RATA / JUMLAH (total nilai kontrak, total pagu, rata-rata progres, jumlah proyek, jumlah tenaga ahli, jumlah vendor, total milestone): JANGAN hitung manual dari daftar (rawan salah). Panggil get_dashboard_stats dan pakai angkanya langsung: total_nilai_kontrak, total_nilai_pagu, rata_rata_progres, total_pekerjaan, total_tenaga_ahli, total_perusahaan, total_milestone.\n"
+            ."FILTER/HITUNG per BIDANG atau JENIS PEKERJAAN ('proyek bidang Jalan ada berapa', 'proyek jenis DED apa aja'): panggil get_pekerjaan_list dengan parameter bidang='Jalan' atau jenis_pekerjaan='DED' (JANGAN pakai 'search', JANGAN tebak dari kata di nama proyek). Jumlah proyek = banyaknya item yang dikembalikan get_pekerjaan_list setelah difilter (server sudah menyaring tepat) — hitung item hasil, jangan tebak. 'Proyek milestone terbanyak' -> sort_by='milestone' order='desc' limit=1; jumlah milestone per proyek ada di field 'jumlah_milestone'.\n"
+            ."NILAI Rp 0 / KOSONG: kalau nilai_pagu_num atau nilai_kontrak_num = 0 (atau field bernilai 'Rp 0'), itu BELUM DIISI — jawab 'belum diisi / belum terisi', JANGAN sebut 'Rp 0' seolah anggarannya nol.\n"
+            ."KONTEKS PERCAKAPAN (WAJIB): pertanyaan lanjutan yang pakai kata ganti/rujukan ('vendornya siapa', 'nilainya berapa', 'proyek itu', 'yang tadi', 'detailnya', 'kapan selesainya') SELALU merujuk ke proyek/entitas yang BARU SAJA kamu sebut di jawaban sebelumnya. Lihat pesan assistant terakhir, ambil proyek itu, dan langsung jawab. DILARANG menjawab 'proyek mana yang Anda maksud' atau minta ID kalau jawaban sebelumnya cuma membahas SATU proyek — itu sudah jelas konteksnya.\n"
+            ."AGREGAT LAIN (daftar yang memenuhi syarat, mis. 'belum 100%', 'nilai 0'): get_pekerjaan_list {} TANPA filter status_waktu, lalu saring sendiri pakai field angka 'nilai_kontrak_num'/'nilai_pagu_num'/'progres_num'. JANGAN pakai filter 'status_waktu' untuk pertanyaan nilai/progres.\n"
+            ."PROYEK BERDASARKAN VENDOR ('proyek yang dikerjakan oleh PT/CV X'): panggil get_pekerjaan_list dengan search berisi 1 kata unik dari nama vendor (mis. 'TACIBA', bukan 'CV TACIBA SHIGOTO NUSANTARA') — search sudah mencakup nama perusahaan.\n"
+            ."TERMIN LINTAS PROYEK ('termin yang sudah diajukan / menunggu pembayaran' tanpa sebut proyek): panggil list_termin dengan status='diajukan' (JANGAN loop get_termin_pekerjaan, JANGAN minta ID). Termin status 'draft' = BELUM diajukan — jangan disebut sudah diajukan. Untuk termin satu proyek tertentu, get_termin_pekerjaan(pekerjaan_id) atau list_termin(pekerjaan_id).\n"
+            ."JANGAN CAMPUR ISTILAH: 'laporan harian' = kehadiran/aktivitas harian vendor di lapangan -> get_laporan_harian (BUKAN termin). 'termin' = tahap pembayaran -> list_termin / get_termin_pekerjaan. Pertanyaan 'laporan harian ... minggu ini' WAJIB pakai get_laporan_harian, jangan list_termin.\n"
+            ."RENCANA PENGADAAN: untuk 'proyek mana yang punya rencana pengadaan' panggil get_rencana_pengadaan TANPA argumen (balikin hanya proyek yang benar-benar punya). Untuk rincian item satu proyek, panggil get_rencana_pengadaan dengan pekerjaan_id. JANGAN samakan dengan termin/daftar proyek biasa, dan JANGAN klaim semua proyek punya pengadaan.\n"
+            .'Selalu KONFIRMASI dulu sebelum action yang ubah data (create/update/delete/approve/generate). Untuk read-only (get_*, list_*, search_*) langsung saja. '
+            .'Format angka uang dalam Rupiah (Rp) dengan titik pemisah ribuan. '
+            .'Status traffic light: aman (hijau), waspada (kuning), kritis/terlambat (merah), selesai (abu-abu).'
+            .$this->factsSnapshot();
+    }
+
+    /**
+     * Snapshot ground-truth ringkas yang ditempel ke system prompt. Dataset kecil (proyek
+     * sedikit) → menyuntik fakta akurat ke konteks mematikan dua failure mode gpt-4o-mini:
+     * (1) menjawab total/jumlah tanpa panggil get_dashboard_stats lalu salah hitung,
+     * (2) mengarang proyek/nilai yang tidak ada. Untuk detail (termin/milestone/personil/
+     * laporan) model tetap WAJIB panggil tool — snapshot ini hanya angka & daftar inti.
+     */
+    private function factsSnapshot(): string
+    {
+        try {
+            $stats = $this->toolDashboardStats([]);
+            $proyek = Pekerjaan::with('perusahaan')->latest()->get();
+        } catch (\Throwable $e) {
+            return '';
+        }
+
+        $lines = $proyek->take(25)->map(function ($p) {
+            $pagu = ((int) $p->nilai_pagu) === 0 ? 'pagu belum diisi' : 'pagu Rp '.number_format((float) $p->nilai_pagu, 0, ',', '.');
+            $kontrak = ((int) $p->nilai_kontrak) === 0 ? 'kontrak belum diisi' : 'kontrak Rp '.number_format((float) $p->nilai_kontrak, 0, ',', '.');
+            $mulai = optional($p->tanggal_mulai)->format('d/m/Y') ?? '-';
+            $akhir = optional($p->tanggal_akhir)->format('d/m/Y') ?? '-';
+
+            return "- {$p->nama_pekerjaan} | {$pagu} | {$kontrak} | progres {$p->progres_persen}% | {$mulai} s/d {$akhir} | vendor ".($p->perusahaan?->nama ?? '-');
+        })->implode("\n");
+
+        $extra = $proyek->count() > 25 ? "\n(...dan ".($proyek->count() - 25).' proyek lain — pakai get_pekerjaan_list untuk sisanya)' : '';
+
+        $tl = $stats['traffic_light'] ?? [];
+        $statusLine = '';
+        if ($tl) {
+            $statusLine = "Status proyek: selesai {$tl['selesai']}, aman {$tl['aman']}, waspada {$tl['waspada']}, kritis {$tl['kritis']}, terlambat {$tl['terlambat']}, belum mulai {$tl['belum_mulai']} (jumlah proyek 'selesai' = ".($tl['selesai'] ?? 0).").\n";
+        }
+
+        // Ekstrem dihitung server-side supaya model tak perlu membandingkan angka (rawan salah,
+        // terutama nilai 'belum diisi'/0 yang sering dikira terkecil). Model cukup baca.
+        $rp = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        $kontrakFilled = $proyek->filter(fn ($p) => (int) $p->nilai_kontrak > 0);
+        $paguFilled = $proyek->filter(fn ($p) => (int) $p->nilai_pagu > 0);
+        $ext = [];
+        if ($kontrakFilled->isNotEmpty()) {
+            $hi = $kontrakFilled->sortByDesc(fn ($p) => (int) $p->nilai_kontrak)->first();
+            $lo = $kontrakFilled->sortBy(fn ($p) => (int) $p->nilai_kontrak)->first();
+            $ext[] = "Nilai kontrak TERTINGGI: {$hi->nama_pekerjaan} ({$rp($hi->nilai_kontrak)}). TERENDAH (di antara yang sudah terisi): {$lo->nama_pekerjaan} ({$rp($lo->nilai_kontrak)}).";
+        }
+        if ($paguFilled->isNotEmpty()) {
+            $ph = $paguFilled->sortByDesc(fn ($p) => (int) $p->nilai_pagu)->first();
+            $pl = $paguFilled->sortBy(fn ($p) => (int) $p->nilai_pagu)->first();
+            $ext[] = "Pagu TERTINGGI: {$ph->nama_pekerjaan} ({$rp($ph->nilai_pagu)}). TERENDAH (terisi): {$pl->nama_pekerjaan} ({$rp($pl->nilai_pagu)}).";
+        }
+        $durFilled = $proyek->filter(fn ($p) => (int) $p->hari_kerja > 0);
+        if ($durFilled->isNotEmpty()) {
+            $dl = $durFilled->sortByDesc(fn ($p) => (int) $p->hari_kerja)->first();
+            $ds = $durFilled->sortBy(fn ($p) => (int) $p->hari_kerja)->first();
+            $ext[] = "Durasi TERLAMA: {$dl->nama_pekerjaan} ({$dl->hari_kerja} hari). TERCEPAT: {$ds->nama_pekerjaan} ({$ds->hari_kerja} hari).";
+        }
+        $extremLine = $ext ? 'Ekstrem: '.implode(' ', $ext)."\n" : '';
+
+        return "\n\n=== FAKTA SISTEM (akurat per sekarang — pakai ini untuk pertanyaan total/jumlah/superlatif/daftar nilai/status, JANGAN mengarang angka atau proyek di luar daftar ini) ===\n"
+            ."Total proyek: {$stats['total_pekerjaan']} | Total pagu: {$stats['total_nilai_pagu']} | Total nilai kontrak: {$stats['total_nilai_kontrak']} | Rata-rata progres: {$stats['rata_rata_progres']} | Tenaga ahli aktif: {$stats['total_tenaga_ahli']} | Vendor terdaftar: {$stats['total_perusahaan']} | Total milestone: {$stats['total_milestone']}\n"
+            .$statusLine
+            .$extremLine
+            ."Daftar proyek:\n{$lines}{$extra}\n"
+            .'Catatan: untuk termin, milestone, personil, laporan harian, pengadaan, atau detail lain yang TIDAK ada di atas, tetap panggil tool yang sesuai.';
     }
 
     /**
@@ -506,7 +616,10 @@ class AiChatService
         $names = $core;
         foreach ($groups as [$kws, $tools]) {
             foreach ($kws as $kw) {
-                if (str_contains($text, $kw)) { $names = array_merge($names, $tools); break; }
+                if (str_contains($text, $kw)) {
+                    $names = array_merge($names, $tools);
+                    break;
+                }
             }
         }
         $keep = array_flip($names);
@@ -518,40 +631,42 @@ class AiChatService
     {
         return [
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_dashboard_stats',
+                    'name' => 'get_dashboard_stats',
                     'description' => 'Ambil statistik overview: jumlah proyek, total nilai kontrak, rata-rata progres, dan distribusi status traffic light.',
-                    'parameters'  => ['type' => 'object', 'properties' => new \stdClass(), 'required' => []],
+                    'parameters' => ['type' => 'object', 'properties' => new \stdClass, 'required' => []],
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_pekerjaan_list',
+                    'name' => 'get_pekerjaan_list',
                     'description' => 'Cari dan tampilkan daftar pekerjaan/proyek dengan filter opsional.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'search'       => ['type' => 'string',  'description' => 'Kata kunci nama pekerjaan atau nomor SPK'],
+                            'search' => ['type' => 'string',  'description' => 'Kata kunci nama pekerjaan atau nomor SPK'],
                             'status_waktu' => ['type' => 'string',  'description' => 'Filter: aman, waspada, kritis, terlambat, selesai, belum_mulai'],
-                            'sort_by'      => ['type' => 'string',  'description' => "Urutkan hasil: 'nilai_kontrak', 'nilai_pagu', 'progres', atau 'durasi' (lama pengerjaan/hari kerja). Pakai untuk pertanyaan terbesar/terkecil/tertinggi/terendah/terlama/tercepat (gabung dengan order + limit=1)."],
-                            'order'        => ['type' => 'string',  'description' => "Arah urut: 'desc' (terbesar dulu) atau 'asc' (terkecil dulu). Default desc. Untuk nilai_kontrak asc, proyek bernilai Rp 0/belum terisi otomatis ditaruh paling akhir."],
-                            'limit'        => ['type' => 'integer', 'description' => 'Jumlah maksimal hasil (default 10, max 20). Pakai 1 untuk ambil yang teratas saja.'],
+                            'bidang' => ['type' => 'string',  'description' => "Filter berdasarkan nama bidang (mis. 'Jalan', 'Drainase', 'Irigasi'). Jumlah hasil = jumlah proyek di bidang itu."],
+                            'jenis_pekerjaan' => ['type' => 'string', 'description' => "Filter berdasarkan jenis pekerjaan (mis. 'DED', 'Perencanaan Teknis', 'Pengawasan'). Jumlah hasil = jumlah proyek jenis itu."],
+                            'sort_by' => ['type' => 'string',  'description' => "Urutkan hasil: 'nilai_kontrak', 'nilai_pagu', 'progres', 'durasi' (lama pengerjaan/hari kerja), atau 'milestone' (jumlah milestone). Pakai untuk pertanyaan terbesar/terkecil/tertinggi/terendah/terlama/tercepat/terbanyak (gabung dengan order + limit=1)."],
+                            'order' => ['type' => 'string',  'description' => "Arah urut: 'desc' (terbesar dulu) atau 'asc' (terkecil dulu). Default desc. Untuk nilai_kontrak asc, proyek bernilai Rp 0/belum terisi otomatis ditaruh paling akhir."],
+                            'limit' => ['type' => 'integer', 'description' => 'Jumlah maksimal hasil (default 10, max 20). Pakai 1 untuk ambil yang teratas saja.'],
                         ],
                         'required' => [],
                     ],
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_pekerjaan_detail',
+                    'name' => 'get_pekerjaan_detail',
                     'description' => 'Ambil detail lengkap satu pekerjaan berdasarkan ID atau nomor SPK.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'id'     => ['type' => 'integer', 'description' => 'ID pekerjaan'],
+                            'id' => ['type' => 'integer', 'description' => 'ID pekerjaan'],
                             'no_spk' => ['type' => 'string',  'description' => 'Nomor SPK (bisa sebagian)'],
                         ],
                         'required' => [],
@@ -559,44 +674,45 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_laporan_harian',
+                    'name' => 'get_laporan_harian',
                     'description' => 'Ambil laporan harian terbaru atau pada tanggal tertentu.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'tanggal'      => ['type' => 'string',  'description' => 'Tanggal format YYYY-MM-DD (default: hari ini)'],
+                            'tanggal' => ['type' => 'string',  'description' => 'Tanggal format YYYY-MM-DD (default: hari ini)'],
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'Filter per ID pekerjaan'],
-                            'limit'        => ['type' => 'integer', 'description' => 'Jumlah maksimal (default 10)'],
+                            'limit' => ['type' => 'integer', 'description' => 'Jumlah maksimal (default 10)'],
                         ],
                         'required' => [],
                     ],
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_personil_proyek',
-                    'description' => 'Ambil daftar personil/tenaga ahli yang bertugas di proyek tertentu.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'name' => 'get_personil_proyek',
+                    'description' => 'Daftar PERSONIL / TENAGA AHLI / TIM (orang yang bertugas: team leader, drafter, dll) di sebuah proyek. BUKAN untuk vendor/perusahaan pelaksana — pertanyaan "vendor/perusahaan/pelaksana siapa" pakai get_pekerjaan_list/get_pekerjaan_detail (field perusahaan), JANGAN tool ini. Isi nama_proyek dengan kata kunci proyek; tidak perlu cari ID dulu.',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (wajib)'],
+                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (opsional kalau nama_proyek diisi)'],
+                            'nama_proyek' => ['type' => 'string',  'description' => '1-2 kata kunci unik dari nama proyek. Server akan mencari proyeknya.'],
                         ],
-                        'required' => ['pekerjaan_id'],
+                        'required' => [],
                     ],
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'update_progres_pekerjaan',
+                    'name' => 'update_progres_pekerjaan',
                     'description' => 'Update persentase progres pekerjaan. KONFIRMASI ke user dulu sebelum panggil ini.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'pekerjaan_id'   => ['type' => 'integer', 'description' => 'ID pekerjaan'],
+                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan'],
                             'progres_persen' => ['type' => 'number',  'description' => 'Progres baru dalam persen (0-100)'],
                         ],
                         'required' => ['pekerjaan_id', 'progres_persen'],
@@ -604,12 +720,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'tandai_milestone_selesai',
+                    'name' => 'tandai_milestone_selesai',
                     'description' => 'Tandai milestone sebagai selesai dengan tanggal hari ini. KONFIRMASI ke user dulu.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'milestone_id' => ['type' => 'integer', 'description' => 'ID milestone'],
                         ],
@@ -618,12 +734,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_milestone_pekerjaan',
+                    'name' => 'get_milestone_pekerjaan',
                     'description' => 'Ambil daftar milestone untuk satu pekerjaan.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (wajib)'],
                         ],
@@ -632,12 +748,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_termin_pekerjaan',
+                    'name' => 'get_termin_pekerjaan',
                     'description' => 'Ambil daftar termin pembayaran untuk satu pekerjaan.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (wajib)'],
                         ],
@@ -646,12 +762,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'get_rencana_pengadaan',
+                    'name' => 'get_rencana_pengadaan',
                     'description' => 'Lihat rencana pengadaan. TANPA pekerjaan_id: daftar proyek yang PUNYA rencana pengadaan beserta jumlah item (pakai untuk "proyek mana yang punya rencana pengadaan"). DENGAN pekerjaan_id: rincian item pengadaan proyek tsb.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan (opsional). Kosongkan untuk daftar semua proyek yang punya rencana pengadaan.'],
                         ],
@@ -660,14 +776,14 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'list_termin',
+                    'name' => 'list_termin',
                     'description' => "Daftar termin pembayaran LINTAS proyek dengan filter status opsional. Untuk 'termin yang sudah diajukan / menunggu pembayaran' pakai status='diajukan'. Status valid: draft, diajukan, disetujui, dibayar, ditolak. Tanpa filter = semua termin. Opsional pekerjaan_id untuk batasi ke satu proyek.",
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'status'       => ['type' => 'string',  'description' => "Filter status termin: draft / diajukan / disetujui / dibayar / ditolak"],
+                            'status' => ['type' => 'string',  'description' => 'Filter status termin: draft / diajukan / disetujui / dibayar / ditolak'],
                             'pekerjaan_id' => ['type' => 'integer', 'description' => 'Opsional: batasi ke satu pekerjaan'],
                         ],
                         'required' => [],
@@ -675,27 +791,27 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'approve_termin',
+                    'name' => 'approve_termin',
                     'description' => 'Approve / setujui termin pembayaran (status diajukan → disetujui). KONFIRMASI ke user dulu.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'termin_id' => ['type' => 'integer', 'description' => 'ID termin'],
-                            'catatan'   => ['type' => 'string',  'description' => 'Catatan PPK opsional'],
+                            'catatan' => ['type' => 'string',  'description' => 'Catatan PPK opsional'],
                         ],
                         'required' => ['termin_id'],
                     ],
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'parse_kak_pdf',
+                    'name' => 'parse_kak_pdf',
                     'description' => 'Baca PDF Kerangka Acuan Kerja (KAK). Ekstrak nama pekerjaan, lokasi, pagu, jadwal. Pakai untuk auto-fill saat bikin proyek baru.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'file_path' => ['type' => 'string', 'description' => 'Path absolut file PDF KAK di storage atau filesystem'],
                         ],
@@ -704,12 +820,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'parse_kontrak_pdf',
+                    'name' => 'parse_kontrak_pdf',
                     'description' => 'Baca PDF Kontrak (SPK/SPMK/BAST). Ekstrak no kontrak, tanggal, nilai, vendor, termin pembayaran, milestone via AI. Lebih akurat dari parse_kak_pdf.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'file_path' => ['type' => 'string', 'description' => 'Path file PDF kontrak'],
                         ],
@@ -718,12 +834,12 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'parse_rab_pdf',
+                    'name' => 'parse_rab_pdf',
                     'description' => 'Baca PDF/XLSX RAB / Lampiran Negosiasi. Ekstrak line items (personil, non-personil) dengan harga negosiasi via AI. Pakai untuk generate invoice yang akurat.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'file_path' => ['type' => 'string', 'description' => 'Path file PDF atau XLSX RAB'],
                         ],
@@ -732,16 +848,16 @@ class AiChatService
                 ],
             ],
             [
-                'type'     => 'function',
+                'type' => 'function',
                 'function' => [
-                    'name'        => 'generate_invoice',
+                    'name' => 'generate_invoice',
                     'description' => 'Generate invoice PDF untuk proyek tertentu. Pakai data personil + rencana pengadaan yang sudah ada di sistem. Return download URL. KONFIRMASI ke user dulu.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'pekerjaan_id'    => ['type' => 'integer', 'description' => 'ID pekerjaan yang mau di-invoice'],
+                            'pekerjaan_id' => ['type' => 'integer', 'description' => 'ID pekerjaan yang mau di-invoice'],
                             'prestasi_persen' => ['type' => 'integer', 'description' => 'Persentase prestasi (default 100)'],
-                            'no_invoice'      => ['type' => 'integer', 'description' => 'Nomor invoice (default = pekerjaan_id)'],
+                            'no_invoice' => ['type' => 'integer', 'description' => 'Nomor invoice (default = pekerjaan_id)'],
                         ],
                         'required' => ['pekerjaan_id'],
                     ],
@@ -754,21 +870,21 @@ class AiChatService
                 'description' => 'Bikin proyek baru. Sistem auto-cek duplikasi by no_spk (block) dan nama mirip (warning). Kalau dapat warning similar_name_found, KONFIRMASI ke user, lalu panggil lagi dengan force_create=true kalau user yakin lanjut.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'nama_pekerjaan' => ['type' => 'string'],
-                    'bidang_kode'    => ['type' => 'string', 'description' => 'BG | JL | DR | IR'],
+                    'bidang_kode' => ['type' => 'string', 'description' => 'BG | JL | DR | IR'],
                     'jenis_pekerjaan' => ['type' => 'string', 'description' => 'Nama jenis pekerjaan (opsional)'],
-                    'perusahaan_id'  => ['type' => 'integer'],
+                    'perusahaan_id' => ['type' => 'integer'],
                     'perusahaan_nama' => ['type' => 'string', 'description' => 'Nama vendor (fuzzy match)'],
-                    'nilai_pagu'     => ['type' => 'number'],
-                    'nilai_kontrak'  => ['type' => 'number'],
-                    'no_spk'         => ['type' => 'string'],
-                    'tanggal_spk'    => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
-                    'no_spmk'        => ['type' => 'string'],
-                    'tanggal_mulai'  => ['type' => 'string'],
-                    'tanggal_akhir'  => ['type' => 'string'],
-                    'hari_kerja'     => ['type' => 'integer'],
+                    'nilai_pagu' => ['type' => 'number'],
+                    'nilai_kontrak' => ['type' => 'number'],
+                    'no_spk' => ['type' => 'string'],
+                    'tanggal_spk' => ['type' => 'string', 'description' => 'YYYY-MM-DD'],
+                    'no_spmk' => ['type' => 'string'],
+                    'tanggal_mulai' => ['type' => 'string'],
+                    'tanggal_akhir' => ['type' => 'string'],
+                    'hari_kerja' => ['type' => 'integer'],
                     'tahun_anggaran' => ['type' => 'integer'],
-                    'lokasi'         => ['type' => 'string', 'description' => 'Lokasi pekerjaan EXACT dari hasil parse_kak_pdf field "lokasi_pekerjaan" (contoh: "Desa Lebakmuncang, Kec. Ciwidey, Kabupaten Bandung"). WAJIB pass kalau ada — composer pakai untuk Latar Belakang + Lokasi section di laporan.'],
-                    'force_create'   => ['type' => 'boolean', 'description' => 'Bypass fuzzy name duplicate warning. Pakai cuma kalau user sudah confirm tetap mau bikin baru meski ada nama mirip.'],
+                    'lokasi' => ['type' => 'string', 'description' => 'Lokasi pekerjaan EXACT dari hasil parse_kak_pdf field "lokasi_pekerjaan" (contoh: "Desa Lebakmuncang, Kec. Ciwidey, Kabupaten Bandung"). WAJIB pass kalau ada — composer pakai untuk Latar Belakang + Lokasi section di laporan.'],
+                    'force_create' => ['type' => 'boolean', 'description' => 'Bypass fuzzy name duplicate warning. Pakai cuma kalau user sudah confirm tetap mau bikin baru meski ada nama mirip.'],
                     'allow_duplicate' => ['type' => 'boolean', 'description' => 'IZIN bikin proyek dengan nama+bidang+tahun SAMA PERSIS dengan yang sudah ada (kembar identik). Default false (diblok). Set true HANYA kalau user eksplisit sadar & sengaja mau duplikat. force_create TIDAK cukup untuk ini.'],
                     'termin_pembayaran' => [
                         'type' => 'array',
@@ -816,17 +932,17 @@ class AiChatService
                 'name' => 'update_pekerjaan',
                 'description' => 'Update field pekerjaan yang sudah ada. KONFIRMASI ke user dulu.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'   => ['type' => 'integer'],
+                    'pekerjaan_id' => ['type' => 'integer'],
                     'nama_pekerjaan' => ['type' => 'string'],
-                    'nilai_pagu'     => ['type' => 'number'],
-                    'nilai_kontrak'  => ['type' => 'number'],
-                    'no_spk'         => ['type' => 'string'],
-                    'tanggal_spk'    => ['type' => 'string'],
-                    'tanggal_mulai'  => ['type' => 'string'],
-                    'tanggal_akhir'  => ['type' => 'string'],
-                    'hari_kerja'     => ['type' => 'integer'],
+                    'nilai_pagu' => ['type' => 'number'],
+                    'nilai_kontrak' => ['type' => 'number'],
+                    'no_spk' => ['type' => 'string'],
+                    'tanggal_spk' => ['type' => 'string'],
+                    'tanggal_mulai' => ['type' => 'string'],
+                    'tanggal_akhir' => ['type' => 'string'],
+                    'hari_kerja' => ['type' => 'integer'],
                     'progres_persen' => ['type' => 'integer'],
-                    'catatan'        => ['type' => 'string'],
+                    'catatan' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
@@ -834,15 +950,15 @@ class AiChatService
                 'description' => 'Hapus (soft delete) pekerjaan. KONFIRMASI dengan jelas ke user dulu, ini destruktif.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
-                    'alasan'       => ['type' => 'string'],
+                    'alasan' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'assign_vendor',
                 'description' => 'Pasang vendor ke pekerjaan. Cari vendor by ID atau nama (fuzzy).',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'   => ['type' => 'integer'],
-                    'perusahaan_id'  => ['type' => 'integer'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'perusahaan_id' => ['type' => 'integer'],
                     'perusahaan_nama' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
@@ -850,10 +966,10 @@ class AiChatService
                 'name' => 'assign_personil',
                 'description' => 'Pasang tenaga ahli ke pekerjaan dengan jabatan + honor. Tenaga ahli bisa baru (kasih nama_tenaga_ahli) atau existing (tenaga_ahli_id).',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'       => ['type' => 'integer'],
-                    'tenaga_ahli_id'     => ['type' => 'integer'],
-                    'nama_tenaga_ahli'   => ['type' => 'string', 'description' => 'Kalau tenaga ahli belum ada, sebutkan namanya — sistem auto-create.'],
-                    'jabatan_kontrak'    => ['type' => 'string'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'tenaga_ahli_id' => ['type' => 'integer'],
+                    'nama_tenaga_ahli' => ['type' => 'string', 'description' => 'Kalau tenaga ahli belum ada, sebutkan namanya — sistem auto-create.'],
+                    'jabatan_kontrak' => ['type' => 'string'],
                     'nilai_honor_kontrak' => ['type' => 'number'],
                 ], 'required' => ['pekerjaan_id', 'jabatan_kontrak']],
             ]],
@@ -863,11 +979,11 @@ class AiChatService
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
                     'items' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
-                        'nama_item'    => ['type' => 'string'],
-                        'satuan'       => ['type' => 'string'],
-                        'volume'       => ['type' => 'number'],
+                        'nama_item' => ['type' => 'string'],
+                        'satuan' => ['type' => 'string'],
+                        'volume' => ['type' => 'number'],
                         'harga_satuan' => ['type' => 'number'],
-                        'keterangan'   => ['type' => 'string'],
+                        'keterangan' => ['type' => 'string'],
                     ]]],
                 ], 'required' => ['pekerjaan_id', 'items']],
             ]],
@@ -877,13 +993,13 @@ class AiChatService
                 'name' => 'submit_daily_report',
                 'description' => 'Submit laporan harian (foto absen). User auto dari auth.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'  => ['type' => 'integer'],
-                    'jenis'         => ['type' => 'string', 'description' => 'masuk | pulang'],
-                    'foto_path'     => ['type' => 'string', 'description' => 'Path foto absen'],
-                    'latitude'      => ['type' => 'number'],
-                    'longitude'     => ['type' => 'number'],
-                    'catatan'       => ['type' => 'string'],
-                    'tanggal'       => ['type' => 'string', 'description' => 'YYYY-MM-DD (default hari ini)'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'jenis' => ['type' => 'string', 'description' => 'masuk | pulang'],
+                    'foto_path' => ['type' => 'string', 'description' => 'Path foto absen'],
+                    'latitude' => ['type' => 'number'],
+                    'longitude' => ['type' => 'number'],
+                    'catatan' => ['type' => 'string'],
+                    'tanggal' => ['type' => 'string', 'description' => 'YYYY-MM-DD (default hari ini)'],
                 ], 'required' => ['pekerjaan_id', 'jenis']],
             ]],
             ['type' => 'function', 'function' => [
@@ -898,7 +1014,7 @@ class AiChatService
                 'description' => 'Reject laporan harian dengan alasan. KONFIRMASI dulu.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'laporan_id' => ['type' => 'integer'],
-                    'alasan'     => ['type' => 'string'],
+                    'alasan' => ['type' => 'string'],
                 ], 'required' => ['laporan_id', 'alasan']],
             ]],
             ['type' => 'function', 'function' => [
@@ -906,13 +1022,13 @@ class AiChatService
                 'description' => 'Submit realisasi pengadaan (vendor lapor barang/jasa yang sudah dibeli/dilakukan).',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'rencana_pengadaan_id' => ['type' => 'integer'],
-                    'volume_beli'    => ['type' => 'number'],
-                    'harga_aktual'   => ['type' => 'number'],
+                    'volume_beli' => ['type' => 'number'],
+                    'harga_aktual' => ['type' => 'number'],
                     'volume_dipakai' => ['type' => 'number'],
-                    'tanggal'        => ['type' => 'string'],
+                    'tanggal' => ['type' => 'string'],
                     'foto_invoice_path' => ['type' => 'string'],
                     'foto_material_path' => ['type' => 'string'],
-                    'catatan'        => ['type' => 'string'],
+                    'catatan' => ['type' => 'string'],
                 ], 'required' => ['rencana_pengadaan_id', 'volume_beli', 'harga_aktual']],
             ]],
             ['type' => 'function', 'function' => [
@@ -927,19 +1043,19 @@ class AiChatService
                 'description' => 'Reject realisasi dengan alasan.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'realisasi_id' => ['type' => 'integer'],
-                    'alasan'       => ['type' => 'string'],
+                    'alasan' => ['type' => 'string'],
                 ], 'required' => ['realisasi_id', 'alasan']],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'request_termin',
                 'description' => 'Vendor ajukan pencairan termin. KONFIRMASI dulu.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'           => ['type' => 'integer'],
-                    'nomor_termin'           => ['type' => 'integer'],
-                    'nama_termin'            => ['type' => 'string'],
-                    'nilai_termin'           => ['type' => 'number'],
-                    'persen_progres_syarat'  => ['type' => 'number'],
-                    'catatan'                => ['type' => 'string'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'nomor_termin' => ['type' => 'integer'],
+                    'nama_termin' => ['type' => 'string'],
+                    'nilai_termin' => ['type' => 'number'],
+                    'persen_progres_syarat' => ['type' => 'number'],
+                    'catatan' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id', 'nomor_termin', 'nilai_termin']],
             ]],
             ['type' => 'function', 'function' => [
@@ -947,7 +1063,7 @@ class AiChatService
                 'description' => 'Reject termin dengan alasan.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'termin_id' => ['type' => 'integer'],
-                    'alasan'    => ['type' => 'string'],
+                    'alasan' => ['type' => 'string'],
                 ], 'required' => ['termin_id', 'alasan']],
             ]],
 
@@ -956,29 +1072,29 @@ class AiChatService
                 'name' => 'invite_vendor_user',
                 'description' => 'Invite user vendor (kasih akses login panel vendor). Email + nama wajib.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'email'          => ['type' => 'string'],
-                    'nama'           => ['type' => 'string'],
-                    'perusahaan_id'  => ['type' => 'integer'],
-                    'no_telp'        => ['type' => 'string'],
+                    'email' => ['type' => 'string'],
+                    'nama' => ['type' => 'string'],
+                    'perusahaan_id' => ['type' => 'integer'],
+                    'no_telp' => ['type' => 'string'],
                 ], 'required' => ['email', 'nama', 'perusahaan_id']],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'invite_staff_user',
                 'description' => 'Invite user staff (bawahan vendor, akses 1 proyek doang).',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'email'          => ['type' => 'string'],
-                    'nama'           => ['type' => 'string'],
-                    'perusahaan_id'  => ['type' => 'integer'],
-                    'pekerjaan_id'   => ['type' => 'integer'],
-                    'no_telp'        => ['type' => 'string'],
+                    'email' => ['type' => 'string'],
+                    'nama' => ['type' => 'string'],
+                    'perusahaan_id' => ['type' => 'integer'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'no_telp' => ['type' => 'string'],
                 ], 'required' => ['email', 'nama', 'perusahaan_id', 'pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'grant_admin_access',
                 'description' => 'Beri user existing role admin_bidang untuk bidang tertentu.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'user_id'    => ['type' => 'integer'],
-                    'email'      => ['type' => 'string'],
+                    'user_id' => ['type' => 'integer'],
+                    'email' => ['type' => 'string'],
                     'bidang_kode' => ['type' => 'string'],
                 ], 'required' => []],
             ]],
@@ -987,7 +1103,7 @@ class AiChatService
                 'description' => 'Cabut akses user (deactivate, bukan delete).',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'user_id' => ['type' => 'integer'],
-                    'email'   => ['type' => 'string'],
+                    'email' => ['type' => 'string'],
                 ], 'required' => []],
             ]],
 
@@ -1011,7 +1127,7 @@ class AiChatService
                 'description' => 'Generate kuitansi gaji per personil dalam 1 PDF.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
-                    'periode'      => ['type' => 'string', 'description' => 'mis. "Januari 2026"'],
+                    'periode' => ['type' => 'string', 'description' => 'mis. "Januari 2026"'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
@@ -1025,8 +1141,8 @@ class AiChatService
                 'name' => 'generate_invoice_sewa_alat',
                 'description' => 'Generate invoice sewa alat lampiran. Bisa override harga supplier.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'pekerjaan_id'    => ['type' => 'integer'],
-                    'harga_supplier'  => ['type' => 'object', 'description' => 'Map: nama_item -> harga aktual supplier'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'harga_supplier' => ['type' => 'object', 'description' => 'Map: nama_item -> harga aktual supplier'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
@@ -1034,7 +1150,7 @@ class AiChatService
                 'description' => 'Generate surat permohonan pembayaran termin.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
-                    'termin_id'    => ['type' => 'integer'],
+                    'termin_id' => ['type' => 'integer'],
                 ], 'required' => ['pekerjaan_id']],
             ]],
             ['type' => 'function', 'function' => [
@@ -1065,7 +1181,7 @@ class AiChatService
                 'description' => 'Kirim pesan WA ke vendor proyek tertentu via WaGatewayService.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
-                    'pesan'        => ['type' => 'string'],
+                    'pesan' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id', 'pesan']],
             ]],
             ['type' => 'function', 'function' => [
@@ -1073,23 +1189,23 @@ class AiChatService
                 'description' => 'Kirim pesan WA ke staff yang assigned di proyek.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'pekerjaan_id' => ['type' => 'integer'],
-                    'pesan'        => ['type' => 'string'],
+                    'pesan' => ['type' => 'string'],
                 ], 'required' => ['pekerjaan_id', 'pesan']],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'get_my_pekerjaan',
                 'description' => 'Untuk vendor/staff: lihat list proyek yang di-assign ke saya.',
-                'parameters' => ['type' => 'object', 'properties' => new \stdClass(), 'required' => []],
+                'parameters' => ['type' => 'object', 'properties' => new \stdClass, 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'search_audit_log',
                 'description' => 'Cari log aktivitas (siapa ubah apa kapan). Filter per user/pekerjaan/tanggal.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'user_email'    => ['type' => 'string'],
-                    'pekerjaan_id'  => ['type' => 'integer'],
-                    'tanggal_from'  => ['type' => 'string'],
-                    'tanggal_to'    => ['type' => 'string'],
-                    'limit'         => ['type' => 'integer'],
+                    'user_email' => ['type' => 'string'],
+                    'pekerjaan_id' => ['type' => 'integer'],
+                    'tanggal_from' => ['type' => 'string'],
+                    'tanggal_to' => ['type' => 'string'],
+                    'limit' => ['type' => 'integer'],
                 ], 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
@@ -1107,7 +1223,7 @@ class AiChatService
                 'description' => 'List file yang sudah diupload user via chat (PDF/Excel/Word). Bisa reference balik file lama tanpa re-upload.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'search' => ['type' => 'string', 'description' => 'Kata kunci nama file (fuzzy match)'],
-                    'limit'  => ['type' => 'integer', 'description' => 'Default 10, max 30'],
+                    'limit' => ['type' => 'integer', 'description' => 'Default 10, max 30'],
                 ], 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
@@ -1115,7 +1231,7 @@ class AiChatService
                 'description' => 'Cari 1 file upload tertentu by nama (fuzzy) atau ID. Return abs_path siap dipakai untuk parse_kak_pdf / parse_kontrak_pdf dll.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'name_keyword' => ['type' => 'string'],
-                    'upload_id'    => ['type' => 'integer'],
+                    'upload_id' => ['type' => 'integer'],
                 ], 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
@@ -1131,19 +1247,19 @@ class AiChatService
                 'description' => 'List master vendor/perusahaan dengan filter opsional.',
                 'parameters' => ['type' => 'object', 'properties' => [
                     'search' => ['type' => 'string'],
-                    'limit'  => ['type' => 'integer'],
+                    'limit' => ['type' => 'integer'],
                 ], 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
                 'name' => 'create_perusahaan',
                 'description' => 'Tambah master vendor baru. KONFIRMASI dulu.',
                 'parameters' => ['type' => 'object', 'properties' => [
-                    'nama'     => ['type' => 'string'],
-                    'jenis'    => ['type' => 'string', 'description' => 'PT | CV | Perorangan | Lainnya'],
-                    'npwp'     => ['type' => 'string'],
-                    'alamat'   => ['type' => 'string'],
-                    'no_telp'  => ['type' => 'string'],
-                    'email'    => ['type' => 'string'],
+                    'nama' => ['type' => 'string'],
+                    'jenis' => ['type' => 'string', 'description' => 'PT | CV | Perorangan | Lainnya'],
+                    'npwp' => ['type' => 'string'],
+                    'alamat' => ['type' => 'string'],
+                    'no_telp' => ['type' => 'string'],
+                    'email' => ['type' => 'string'],
                     'pic_nama' => ['type' => 'string'],
                 ], 'required' => ['nama']],
             ]],
@@ -1153,103 +1269,121 @@ class AiChatService
     private function executeTool(string $name, array $input): array
     {
         return match ($name) {
-            'get_dashboard_stats'      => $this->toolDashboardStats(),
-            'get_pekerjaan_list'       => $this->toolPekerjaanList($input),
-            'get_pekerjaan_detail'     => $this->toolPekerjaanDetail($input),
-            'get_laporan_harian'       => $this->toolLaporanHarian($input),
-            'get_personil_proyek'      => $this->toolPersonilProyek($input),
-            'get_milestone_pekerjaan'  => $this->toolMilestonePekerjaan($input),
-            'get_termin_pekerjaan'     => $this->toolTerminPekerjaan($input),
-            'get_rencana_pengadaan'    => $this->toolRencanaPengadaan($input),
-            'list_termin'              => $this->toolListTermin($input),
+            'get_dashboard_stats' => $this->toolDashboardStats(),
+            'get_pekerjaan_list' => $this->toolPekerjaanList($input),
+            'get_pekerjaan_detail' => $this->toolPekerjaanDetail($input),
+            'get_laporan_harian' => $this->toolLaporanHarian($input),
+            'get_personil_proyek' => $this->toolPersonilProyek($input),
+            'get_milestone_pekerjaan' => $this->toolMilestonePekerjaan($input),
+            'get_termin_pekerjaan' => $this->toolTerminPekerjaan($input),
+            'get_rencana_pengadaan' => $this->toolRencanaPengadaan($input),
+            'list_termin' => $this->toolListTermin($input),
             'update_progres_pekerjaan' => $this->toolUpdateProgres($input),
             'tandai_milestone_selesai' => $this->toolMilestoneSelesai($input),
-            'approve_termin'           => $this->toolApproveTermin($input),
-            'parse_kak_pdf'            => $this->toolParseKak($input),
-            'parse_kontrak_pdf'        => $this->toolParseKontrak($input),
-            'parse_rab_pdf'            => $this->toolParseRab($input),
-            'generate_invoice'         => $this->toolGenerateInvoice($input),
+            'approve_termin' => $this->toolApproveTermin($input),
+            'parse_kak_pdf' => $this->toolParseKak($input),
+            'parse_kontrak_pdf' => $this->toolParseKontrak($input),
+            'parse_rab_pdf' => $this->toolParseRab($input),
+            'generate_invoice' => $this->toolGenerateInvoice($input),
             // Batch 1: Project Manager
-            'create_pekerjaan'         => $this->toolCreatePekerjaan($input),
-            'update_pekerjaan'         => $this->toolUpdatePekerjaan($input),
-            'delete_pekerjaan'         => $this->toolDeletePekerjaan($input),
-            'assign_vendor'            => $this->toolAssignVendor($input),
-            'assign_personil'          => $this->toolAssignPersonil($input),
+            'create_pekerjaan' => $this->toolCreatePekerjaan($input),
+            'update_pekerjaan' => $this->toolUpdatePekerjaan($input),
+            'delete_pekerjaan' => $this->toolDeletePekerjaan($input),
+            'assign_vendor' => $this->toolAssignVendor($input),
+            'assign_personil' => $this->toolAssignPersonil($input),
             'create_rencana_pengadaan' => $this->toolCreateRencanaPengadaan($input),
             // Batch 2: Workflow Manager
-            'submit_daily_report'      => $this->toolSubmitDailyReport($input),
-            'approve_daily_report'     => $this->toolApproveDailyReport($input),
-            'reject_daily_report'      => $this->toolRejectDailyReport($input),
-            'submit_realisasi'         => $this->toolSubmitRealisasi($input),
-            'approve_realisasi'        => $this->toolApproveRealisasi($input),
-            'reject_realisasi'         => $this->toolRejectRealisasi($input),
-            'request_termin'           => $this->toolRequestTermin($input),
-            'reject_termin'            => $this->toolRejectTermin($input),
+            'submit_daily_report' => $this->toolSubmitDailyReport($input),
+            'approve_daily_report' => $this->toolApproveDailyReport($input),
+            'reject_daily_report' => $this->toolRejectDailyReport($input),
+            'submit_realisasi' => $this->toolSubmitRealisasi($input),
+            'approve_realisasi' => $this->toolApproveRealisasi($input),
+            'reject_realisasi' => $this->toolRejectRealisasi($input),
+            'request_termin' => $this->toolRequestTermin($input),
+            'reject_termin' => $this->toolRejectTermin($input),
             // Batch 3: User Manager
-            'invite_vendor_user'       => $this->toolInviteVendorUser($input),
-            'invite_staff_user'        => $this->toolInviteStaffUser($input),
-            'grant_admin_access'       => $this->toolGrantAdminAccess($input),
-            'revoke_access'            => $this->toolRevokeAccess($input),
+            'invite_vendor_user' => $this->toolInviteVendorUser($input),
+            'invite_staff_user' => $this->toolInviteStaffUser($input),
+            'grant_admin_access' => $this->toolGrantAdminAccess($input),
+            'revoke_access' => $this->toolRevokeAccess($input),
             // Batch 4: Writer
             'generate_laporan_pendahuluan' => $this->toolGenerateLaporanPendahuluan($input),
-            'generate_laporan_akhir'   => $this->toolGenerateLaporanAkhir($input),
-            'generate_kuitansi_gaji'   => $this->toolGenerateKuitansiGaji($input),
-            'generate_invoice_atk'     => $this->toolGenerateInvoiceAtk($input),
+            'generate_laporan_akhir' => $this->toolGenerateLaporanAkhir($input),
+            'generate_kuitansi_gaji' => $this->toolGenerateKuitansiGaji($input),
+            'generate_invoice_atk' => $this->toolGenerateInvoiceAtk($input),
             'generate_invoice_sewa_alat' => $this->toolGenerateInvoiceSewaAlat($input),
             'generate_surat_permohonan_pembayaran' => $this->toolGenerateSuratPermohonan($input),
-            'generate_bast'            => $this->toolGenerateBast($input),
+            'generate_bast' => $this->toolGenerateBast($input),
             // Batch 5: Misc
-            'parse_penawaran_pdf'      => $this->toolParsePenawaran($input),
+            'parse_penawaran_pdf' => $this->toolParsePenawaran($input),
             'cross_check_rab_vs_kontrak' => $this->toolCrossCheckRab($input),
-            'send_wa_to_vendor'        => $this->toolSendWaVendor($input),
-            'send_wa_to_staff'         => $this->toolSendWaStaff($input),
-            'get_my_pekerjaan'         => $this->toolGetMyPekerjaan(),
-            'search_audit_log'         => $this->toolSearchAuditLog($input),
-            'list_perusahaan'          => $this->toolListPerusahaan($input),
-            'create_perusahaan'        => $this->toolCreatePerusahaan($input),
-            'parse_multiple_docs'      => $this->toolParseMultipleDocs($input),
-            'list_uploaded_files'      => $this->toolListUploadedFiles($input),
-            'find_uploaded_file'       => $this->toolFindUploadedFile($input),
-            'ocr_pdf'                  => $this->toolOcrPdf($input),
-            default                    => ['error' => "Tool '{$name}' tidak dikenali"],
+            'send_wa_to_vendor' => $this->toolSendWaVendor($input),
+            'send_wa_to_staff' => $this->toolSendWaStaff($input),
+            'get_my_pekerjaan' => $this->toolGetMyPekerjaan(),
+            'search_audit_log' => $this->toolSearchAuditLog($input),
+            'list_perusahaan' => $this->toolListPerusahaan($input),
+            'create_perusahaan' => $this->toolCreatePerusahaan($input),
+            'parse_multiple_docs' => $this->toolParseMultipleDocs($input),
+            'list_uploaded_files' => $this->toolListUploadedFiles($input),
+            'find_uploaded_file' => $this->toolFindUploadedFile($input),
+            'ocr_pdf' => $this->toolOcrPdf($input),
+            default => ['error' => "Tool '{$name}' tidak dikenali"],
         };
     }
 
     private function toolParseKak(array $input): array
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
-        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
-        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
+        if (! $path) {
+            return ['error' => 'File tidak ditemukan: '.($input['file_path'] ?? '')];
+        }
+        if ($this->ocrPending($path)) {
+            return $this->ocrPendingResponse();
+        }
+
         return $this->parseDoc('kak', $path);
     }
 
     private function toolParseKontrak(array $input): array
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
-        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
-        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
+        if (! $path) {
+            return ['error' => 'File tidak ditemukan: '.($input['file_path'] ?? '')];
+        }
+        if ($this->ocrPending($path)) {
+            return $this->ocrPendingResponse();
+        }
+
         return $this->parseDoc('kontrak', $path);
     }
 
     private function toolParseRab(array $input): array
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
-        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
-        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
+        if (! $path) {
+            return ['error' => 'File tidak ditemukan: '.($input['file_path'] ?? '')];
+        }
+        if ($this->ocrPending($path)) {
+            return $this->ocrPendingResponse();
+        }
+
         return $this->parseDoc('rab', $path);
     }
 
     private function toolGenerateInvoice(array $input): array
     {
         $pid = (int) ($input['pekerjaan_id'] ?? 0);
-        if (!$pid) return ['error' => 'pekerjaan_id wajib'];
+        if (! $pid) {
+            return ['error' => 'pekerjaan_id wajib'];
+        }
         try {
-            $gen = app(\App\Services\DocumentGeneratorService::class);
+            $gen = app(DocumentGeneratorService::class);
             $result = $gen->generateInvoice(
                 $pid,
                 isset($input['prestasi_persen']) ? (int) $input['prestasi_persen'] : null,
                 isset($input['no_invoice']) ? (int) $input['no_invoice'] : null,
             );
+
             return ['ok' => true, 'result' => $result];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -1258,15 +1392,24 @@ class AiChatService
 
     private function resolveFilePath(string $raw): ?string
     {
-        if (empty($raw)) return null;
+        if (empty($raw)) {
+            return null;
+        }
         // Absolute path
-        if (file_exists($raw)) return $raw;
+        if (file_exists($raw)) {
+            return $raw;
+        }
         // Relative to storage/app
-        $candidate = storage_path('app/' . ltrim($raw, '/'));
-        if (file_exists($candidate)) return $candidate;
+        $candidate = storage_path('app/'.ltrim($raw, '/'));
+        if (file_exists($candidate)) {
+            return $candidate;
+        }
         // Public storage
-        $candidate2 = storage_path('app/public/' . ltrim($raw, '/'));
-        if (file_exists($candidate2)) return $candidate2;
+        $candidate2 = storage_path('app/public/'.ltrim($raw, '/'));
+        if (file_exists($candidate2)) {
+            return $candidate2;
+        }
+
         return null;
     }
 
@@ -1277,22 +1420,49 @@ class AiChatService
      */
     private function ocrPending(string $path): bool
     {
-        $u = \App\Models\ChatUpload::where('abs_path', $path)->first();
-        if (!$u || !$u->is_scanned_pdf) return false;            // bukan scan → parser jalan normal
-        if (mb_strlen((string) $u->ocr_text) >= 200) return false; // OCR kelar → cache hangat
-        if (\Illuminate\Support\Facades\Cache::get(\App\Jobs\OcrChatUpload::doneKey($u->id))) {
+        $u = ChatUpload::where('abs_path', $path)->first();
+        if (! $u) {
+            return false;
+        }
+
+        // Lazy (D): dokumen TIDAK diproses saat upload. Saat PERTAMA kali benar-benar
+        // dibutuhkan (parse_*/ocr_pdf), mulai probe teks-layer + deteksi scan di background
+        // lalu suruh tunggu — request web tetap cepat, dan file yang cuma dilampirkan/
+        // diarsipkan (tak pernah ditanya) tak memakan worker / biaya OCR sama sekali.
+        $isPdf = str_contains((string) $u->mime, 'pdf')
+            || str_ends_with(strtolower((string) $u->original_name), '.pdf');
+        if ($isPdf) {
+            if (Cache::get(ProbeChatUpload::pendingKey($u->id))) {
+                return true; // probe lagi jalan → tunggu
+            }
+            if (! Cache::get(ProbeChatUpload::doneKey($u->id))) {
+                Cache::put(ProbeChatUpload::pendingKey($u->id), 1, 1800);
+                ProbeChatUpload::dispatch($u->id);
+
+                return true; // baru dimulai → tunggu sebentar
+            }
+        }
+
+        if (! $u->is_scanned_pdf) {
+            return false;
+        }            // bukan scan → parser jalan normal
+        if (mb_strlen((string) $u->ocr_text) >= 200) {
+            return false;
+        } // OCR kelar → cache hangat
+        if (Cache::get(OcrChatUpload::doneKey($u->id))) {
             return false;                                         // job kelar (teks tipis/gagal) → biar parser munculin error asli
         }
+
         return true;                                              // scan, OCR masih jalan
     }
 
     private function ocrPendingResponse(): array
     {
         return [
-            'ok'      => false,
-            'status'  => 'processing',
-            'pesan'   => 'Dokumen ini hasil scan dan teksnya sedang dibaca (OCR) di background. '
-                       . 'Tunggu ~10-30 detik lalu minta lagi — jangan OCR ulang sekarang.',
+            'ok' => false,
+            'status' => 'processing',
+            'pesan' => 'Dokumen masih disiapkan/dibaca di background. '
+                       .'Tunggu ~10-30 detik lalu minta lagi — jangan parse/OCR ulang sekarang.',
         ];
     }
 
@@ -1307,42 +1477,48 @@ class AiChatService
             return $this->runParserSync($type, $path);   // OpenAI: cepat, langsung
         }
 
-        $u = \App\Models\ChatUpload::where('abs_path', $path)->first();
-        if (!$u) {
+        $u = ChatUpload::where('abs_path', $path)->first();
+        if (! $u) {
             return $this->runParserSync($type, $path);    // tak bisa di-cache (jarang) → sinkron
         }
 
-        $resKey = \App\Jobs\ParseChatDocument::resultKey($u->id, $type);
-        $cached = \Illuminate\Support\Facades\Cache::get($resKey);
+        $resKey = ParseChatDocument::resultKey($u->id, $type);
+        $cached = Cache::get($resKey);
         if (is_array($cached)) {
             if (isset($cached['__error'])) {
-                \Illuminate\Support\Facades\Cache::forget($resKey); // boleh dicoba lagi
+                Cache::forget($resKey); // boleh dicoba lagi
+
                 return ['error' => $cached['__error']];
             }
             $this->captureParseTruth($type, $cached);     // G3b (di konteks web — auth tersedia)
+
             return ['ok' => true, 'data' => $cached];
         }
 
-        $pendKey = \App\Jobs\ParseChatDocument::pendingKey($u->id, $type);
-        if (!\Illuminate\Support\Facades\Cache::get($pendKey)) {
-            \Illuminate\Support\Facades\Cache::put($pendKey, 1, 1800);
-            \App\Jobs\ParseChatDocument::dispatch($u->id, $type, $path);
+        $pendKey = ParseChatDocument::pendingKey($u->id, $type);
+        if (! Cache::get($pendKey)) {
+            Cache::put($pendKey, 1, 1800);
+            ParseChatDocument::dispatch($u->id, $type, $path);
         }
+
         return $this->parsePendingResponse();
     }
 
     private function runParserSync(string $type, string $path): array
     {
         $service = match ($type) {
-            'kak'                  => app(\App\Services\KickoffParserService::class),
-            'kontrak', 'penawaran' => app(\App\Services\KontrakParserService::class),
-            'rab'                  => app(\App\Services\RabParserService::class),
-            default                => null,
+            'kak' => app(KickoffParserService::class),
+            'kontrak', 'penawaran' => app(KontrakParserService::class),
+            'rab' => app(RabParserService::class),
+            default => null,
         };
-        if (!$service) return ['error' => "Type '{$type}' gak dikenal (pakai: kak/kontrak/rab/penawaran)"];
+        if (! $service) {
+            return ['error' => "Type '{$type}' gak dikenal (pakai: kak/kontrak/rab/penawaran)"];
+        }
         try {
             $data = $service->parse($path);
             $this->captureParseTruth($type, $data);       // G3b
+
             return ['ok' => true, 'data' => $data];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -1352,31 +1528,32 @@ class AiChatService
     private function parsePendingResponse(): array
     {
         return [
-            'ok'     => false,
+            'ok' => false,
             'status' => 'processing',
-            'pesan'  => 'Dokumen sedang dianalisis AI lokal (Qwen) di background — bisa 1-3 menit. '
-                      . 'Tunggu sebentar lalu minta lagi; jangan parse ulang sekarang.',
+            'pesan' => 'Dokumen sedang dianalisis AI lokal (Qwen) di background — bisa 1-3 menit. '
+                      .'Tunggu sebentar lalu minta lagi; jangan parse ulang sekarang.',
         ];
     }
 
     private function toolDashboardStats(): array
     {
-        $all         = Pekerjaan::with('statusPekerjaan')->get();
+        $all = Pekerjaan::with('statusPekerjaan')->get();
         $statusGroups = $all->groupBy(fn ($p) => $p->status_waktu);
 
         return [
-            'total_pekerjaan'     => $all->count(),
-            'total_nilai_kontrak' => 'Rp ' . number_format((float) $all->sum('nilai_kontrak'), 0, ',', '.'),
-            'total_nilai_pagu'    => 'Rp ' . number_format((float) $all->sum('nilai_pagu'), 0, ',', '.'),
-            'rata_rata_progres'   => round((float) $all->avg('progres_persen'), 1) . '%',
-            'total_tenaga_ahli'   => \App\Models\Master\TenagaAhli::where('is_active', true)->count(),
-            'total_perusahaan'    => \App\Models\Master\Perusahaan::count(),
-            'traffic_light'       => [
-                'aman'        => $statusGroups->get('aman', collect())->count(),
-                'waspada'     => $statusGroups->get('waspada', collect())->count(),
-                'kritis'      => $statusGroups->get('kritis', collect())->count(),
-                'terlambat'   => $statusGroups->get('terlambat', collect())->count(),
-                'selesai'     => $statusGroups->get('selesai', collect())->count(),
+            'total_pekerjaan' => $all->count(),
+            'total_nilai_kontrak' => 'Rp '.number_format((float) $all->sum('nilai_kontrak'), 0, ',', '.'),
+            'total_nilai_pagu' => 'Rp '.number_format((float) $all->sum('nilai_pagu'), 0, ',', '.'),
+            'rata_rata_progres' => round((float) $all->avg('progres_persen'), 1).'%',
+            'total_tenaga_ahli' => TenagaAhli::where('is_active', true)->count(),
+            'total_perusahaan' => Perusahaan::count(),
+            'total_milestone' => MilestonePekerjaan::whereIn('pekerjaan_id', $all->pluck('id'))->count(),
+            'traffic_light' => [
+                'aman' => $statusGroups->get('aman', collect())->count(),
+                'waspada' => $statusGroups->get('waspada', collect())->count(),
+                'kritis' => $statusGroups->get('kritis', collect())->count(),
+                'terlambat' => $statusGroups->get('terlambat', collect())->count(),
+                'selesai' => $statusGroups->get('selesai', collect())->count(),
                 'belum_mulai' => $statusGroups->get('belum_mulai', collect())->count(),
             ],
         ];
@@ -1385,15 +1562,16 @@ class AiChatService
     private function toolPekerjaanList(array $input): array
     {
         $limit = min((int) ($input['limit'] ?? 10), 20);
-        $query = Pekerjaan::with(['bidang', 'perusahaan', 'statusPekerjaan']);
+        $query = Pekerjaan::with(['bidang', 'perusahaan', 'statusPekerjaan', 'jenisPekerjaan'])
+            ->withCount('milestones');
 
-        if (!empty($input['search'])) {
+        if (! empty($input['search'])) {
             // Tokenize: tiap kata kunci harus muncul (AND), masing-masing boleh di nama ATAU no_spk.
             // Biar "DED Cileunyi" cocok dgn "DED Jalan Kabupaten Wilayah Cileunyi" (kata tak berurutan).
-            $stop   = ['proyek', 'pekerjaan', 'yang', 'yg', 'dan', 'di', 'ke'];
+            $stop = ['proyek', 'pekerjaan', 'yang', 'yg', 'dan', 'di', 'ke'];
             $tokens = array_values(array_filter(
                 preg_split('/\s+/', trim($input['search'])),
-                fn ($t) => mb_strlen($t) >= 3 && !in_array(mb_strtolower($t), $stop, true)
+                fn ($t) => mb_strlen($t) >= 3 && ! in_array(mb_strtolower($t), $stop, true)
             ));
             if (empty($tokens)) {
                 $tokens = [$input['search']]; // fallback: frasa apa adanya
@@ -1410,14 +1588,22 @@ class AiChatService
 
         $items = $query->latest()->limit(50)->get();
 
-        if (!empty($input['status_waktu'])) {
+        if (! empty($input['status_waktu'])) {
             $items = $items->filter(fn ($p) => $p->status_waktu === $input['status_waktu'])->values();
+        }
+        if (! empty($input['bidang'])) {
+            $b = mb_strtolower(trim($input['bidang']));
+            $items = $items->filter(fn ($p) => str_contains(mb_strtolower((string) $p->bidang?->nama), $b))->values();
+        }
+        if (! empty($input['jenis_pekerjaan'])) {
+            $j = mb_strtolower(trim($input['jenis_pekerjaan']));
+            $items = $items->filter(fn ($p) => str_contains(mb_strtolower((string) $p->jenisPekerjaan?->nama), $j))->values();
         }
 
         // Sortir server-side untuk pertanyaan superlatif (terbesar/terkecil) — lebih andal
         // daripada minta model membandingkan angka sendiri.
         $sortBy = $input['sort_by'] ?? null;
-        if (in_array($sortBy, ['nilai_kontrak', 'nilai_pagu', 'progres', 'durasi'], true)) {
+        if (in_array($sortBy, ['nilai_kontrak', 'nilai_pagu', 'progres', 'durasi', 'milestone'], true)) {
             $desc = ($input['order'] ?? 'desc') !== 'asc';
             $items = $items->sortBy(function ($p) use ($sortBy, $desc) {
                 if ($sortBy === 'progres') {
@@ -1426,32 +1612,38 @@ class AiChatService
                 if ($sortBy === 'durasi') {
                     return (int) $p->hari_kerja;
                 }
+                if ($sortBy === 'milestone') {
+                    return (int) $p->milestones_count;
+                }
                 $v = $sortBy === 'nilai_pagu' ? (int) $p->nilai_pagu : (int) $p->nilai_kontrak;
+
                 // nilai 0 = belum terisi → taruh paling akhir saat ascending (cari terkecil terisi)
-                return ($v === 0 && !$desc) ? PHP_INT_MAX : $v;
+                return ($v === 0 && ! $desc) ? PHP_INT_MAX : $v;
             }, SORT_REGULAR, $desc)->values();
         }
 
         return $items->take($limit)->map(fn ($p) => [
-            'id'                => $p->id,
-            'no_spk'            => $p->no_spk,
-            'nama'              => $p->nama_pekerjaan,
-            'bidang'            => $p->bidang?->nama_bidang,
-            'perusahaan'        => $p->perusahaan?->nama,
-            'nilai_pagu'        => 'Rp ' . number_format((float) $p->nilai_pagu, 0, ',', '.'),
-            'nilai_pagu_num'    => (int) $p->nilai_pagu,
-            'nilai_kontrak'     => 'Rp ' . number_format((float) $p->nilai_kontrak, 0, ',', '.'),
+            'id' => $p->id,
+            'no_spk' => $p->no_spk,
+            'nama' => $p->nama_pekerjaan,
+            'bidang' => $p->bidang?->nama,
+            'jenis_pekerjaan' => $p->jenisPekerjaan?->nama,
+            'perusahaan' => $p->perusahaan?->nama,
+            'nilai_pagu' => ((int) $p->nilai_pagu) === 0 ? 'belum diisi' : 'Rp '.number_format((float) $p->nilai_pagu, 0, ',', '.'),
+            'nilai_pagu_num' => (int) $p->nilai_pagu,
+            'nilai_kontrak' => ((int) $p->nilai_kontrak) === 0 ? 'belum diisi' : 'Rp '.number_format((float) $p->nilai_kontrak, 0, ',', '.'),
             // angka mentah untuk perbandingan/sortir numerik (string 'Rp 99.678.000' bikin
             // model salah banding). 0 = belum terisi.
             'nilai_kontrak_num' => (int) $p->nilai_kontrak,
-            'progres'           => $p->progres_persen . '%',
-            'progres_num'       => (int) $p->progres_persen,
-            'durasi'            => $p->hari_kerja . ' ' . ($p->satuan_waktu ?? 'hari'),
-            'hari_kerja_num'    => (int) $p->hari_kerja,
-            'tanggal_mulai'     => optional($p->tanggal_mulai)->format('d/m/Y'),
-            'tanggal_akhir'     => optional($p->tanggal_akhir)->format('d/m/Y'),
-            'status_waktu'      => $p->status_waktu,
-            'sisa_hari'         => $p->sisa_hari,
+            'progres' => $p->progres_persen.'%',
+            'progres_num' => (int) $p->progres_persen,
+            'durasi' => $p->hari_kerja.' '.($p->satuan_waktu ?? 'hari'),
+            'hari_kerja_num' => (int) $p->hari_kerja,
+            'jumlah_milestone' => (int) $p->milestones_count,
+            'tanggal_mulai' => optional($p->tanggal_mulai)->format('d/m/Y'),
+            'tanggal_akhir' => optional($p->tanggal_akhir)->format('d/m/Y'),
+            'status_waktu' => $p->status_waktu,
+            'sisa_hari' => $p->sisa_hari,
         ])->values()->toArray();
     }
 
@@ -1459,46 +1651,46 @@ class AiChatService
     {
         $pekerjaan = null;
 
-        if (!empty($input['id'])) {
+        if (! empty($input['id'])) {
             $pekerjaan = Pekerjaan::with(['bidang', 'perusahaan', 'jenisPekerjaan', 'statusPekerjaan'])
                 ->find((int) $input['id']);
-        } elseif (!empty($input['no_spk'])) {
+        } elseif (! empty($input['no_spk'])) {
             $pekerjaan = Pekerjaan::with(['bidang', 'perusahaan', 'jenisPekerjaan', 'statusPekerjaan'])
-                ->where('no_spk', 'like', '%' . $input['no_spk'] . '%')
+                ->where('no_spk', 'like', '%'.$input['no_spk'].'%')
                 ->first();
         }
 
-        if (!$pekerjaan) {
+        if (! $pekerjaan) {
             return ['error' => 'Pekerjaan tidak ditemukan'];
         }
 
         return [
-            'id'             => $pekerjaan->id,
-            'no_spk'         => $pekerjaan->no_spk,
-            'nama'           => $pekerjaan->nama_pekerjaan,
-            'bidang'         => $pekerjaan->bidang?->nama_bidang,
-            'jenis'          => $pekerjaan->jenisPekerjaan?->nama_jenis,
-            'perusahaan'     => $pekerjaan->perusahaan?->nama,
-            'nilai_pagu'     => 'Rp ' . number_format((float) $pekerjaan->nilai_pagu, 0, ',', '.'),
-            'nilai_kontrak'  => 'Rp ' . number_format((float) $pekerjaan->nilai_kontrak, 0, ',', '.'),
-            'tanggal_mulai'  => $pekerjaan->tanggal_mulai?->format('d/m/Y'),
-            'tanggal_akhir'  => $pekerjaan->tanggal_akhir?->format('d/m/Y'),
-            'progres_persen' => $pekerjaan->progres_persen . '%',
-            'status_waktu'   => $pekerjaan->status_waktu,
-            'sisa_hari'      => $pekerjaan->sisa_hari,
-            'catatan'        => $pekerjaan->catatan,
+            'id' => $pekerjaan->id,
+            'no_spk' => $pekerjaan->no_spk,
+            'nama' => $pekerjaan->nama_pekerjaan,
+            'bidang' => $pekerjaan->bidang?->nama_bidang,
+            'jenis' => $pekerjaan->jenisPekerjaan?->nama_jenis,
+            'perusahaan' => $pekerjaan->perusahaan?->nama,
+            'nilai_pagu' => 'Rp '.number_format((float) $pekerjaan->nilai_pagu, 0, ',', '.'),
+            'nilai_kontrak' => 'Rp '.number_format((float) $pekerjaan->nilai_kontrak, 0, ',', '.'),
+            'tanggal_mulai' => $pekerjaan->tanggal_mulai?->format('d/m/Y'),
+            'tanggal_akhir' => $pekerjaan->tanggal_akhir?->format('d/m/Y'),
+            'progres_persen' => $pekerjaan->progres_persen.'%',
+            'status_waktu' => $pekerjaan->status_waktu,
+            'sisa_hari' => $pekerjaan->sisa_hari,
+            'catatan' => $pekerjaan->catatan,
         ];
     }
 
     private function toolLaporanHarian(array $input): array
     {
         $tanggal = $input['tanggal'] ?? today()->format('Y-m-d');
-        $limit   = min((int) ($input['limit'] ?? 10), 20);
+        $limit = min((int) ($input['limit'] ?? 10), 20);
 
         $query = LaporanHarian::with(['pekerjaan', 'user'])
             ->whereDate('tanggal_laporan', $tanggal);
 
-        if (!empty($input['pekerjaan_id'])) {
+        if (! empty($input['pekerjaan_id'])) {
             $query->where('pekerjaan_id', (int) $input['pekerjaan_id']);
         }
 
@@ -1510,14 +1702,14 @@ class AiChatService
 
         return [
             'tanggal' => $tanggal,
-            'jumlah'  => $items->count(),
-            'data'    => $items->map(fn ($l) => [
-                'id'        => $l->id,
+            'jumlah' => $items->count(),
+            'data' => $items->map(fn ($l) => [
+                'id' => $l->id,
                 'pekerjaan' => $l->pekerjaan?->nama_pekerjaan,
-                'jenis'     => $l->jenis,
-                'user'      => $l->user?->name,
-                'catatan'   => $l->catatan,
-                'status'    => $l->status,
+                'jenis' => $l->jenis,
+                'user' => $l->user?->name,
+                'catatan' => $l->catatan,
+                'status' => $l->status,
                 'submitted' => $l->submitted_at?->format('H:i'),
             ])->toArray(),
         ];
@@ -1525,13 +1717,24 @@ class AiChatService
 
     private function toolPersonilProyek(array $input): array
     {
-        if (empty($input['pekerjaan_id'])) {
-            return ['error' => 'pekerjaan_id wajib diisi'];
+        $pekerjaan = null;
+        if (! empty($input['pekerjaan_id'])) {
+            $pekerjaan = Pekerjaan::find((int) $input['pekerjaan_id']);
+        } elseif (! empty($input['nama_proyek'])) {
+            // Resolusi by-name supaya model tak perlu rantai cari-ID dulu (rawan gagal).
+            $tokens = array_values(array_filter(
+                preg_split('/\s+/', trim($input['nama_proyek'])),
+                fn ($t) => mb_strlen($t) >= 3
+            )) ?: [$input['nama_proyek']];
+            $pekerjaan = Pekerjaan::where(function ($q) use ($tokens) {
+                foreach ($tokens as $t) {
+                    $q->where('nama_pekerjaan', 'like', "%{$t}%");
+                }
+            })->latest()->first();
         }
 
-        $pekerjaan = Pekerjaan::find((int) $input['pekerjaan_id']);
-        if (!$pekerjaan) {
-            return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan. Sebut nama proyek lebih spesifik.'];
         }
 
         $personil = PekerjaanPersonil::with('tenagaAhli')
@@ -1541,11 +1744,11 @@ class AiChatService
 
         return [
             'pekerjaan' => $pekerjaan->nama_pekerjaan,
-            'jumlah'    => $personil->count(),
-            'data'      => $personil->map(fn ($p) => [
-                'nama'            => $p->tenagaAhli?->nama,
+            'jumlah' => $personil->count(),
+            'data' => $personil->map(fn ($p) => [
+                'nama' => $p->tenagaAhli?->nama,
                 'jabatan_kontrak' => $p->jabatan_kontrak,
-                'mulai_tugas'     => $p->tanggal_mulai_tugas?->format('d/m/Y'),
+                'mulai_tugas' => $p->tanggal_mulai_tugas?->format('d/m/Y'),
             ])->toArray(),
         ];
     }
@@ -1553,7 +1756,7 @@ class AiChatService
     private function toolMilestonePekerjaan(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) {
+        if (! $pekerjaan) {
             return ['error' => 'Pekerjaan tidak ditemukan'];
         }
 
@@ -1562,16 +1765,16 @@ class AiChatService
 
         return [
             'pekerjaan' => $pekerjaan->nama_pekerjaan,
-            'jumlah'    => $milestones->count(),
-            'data'      => $milestones->map(fn ($m) => [
-                'id'                    => $m->id,
-                'urutan'                => $m->urutan,
-                'nama'                  => $m->nama,
-                'tanggal_target'        => $m->tanggal_target?->format('d/m/Y'),
-                'tanggal_selesai'       => $m->tanggal_selesai_aktual?->format('d/m/Y'),
-                'progres_target_persen' => $m->progres_target_persen . '%',
-                'status'                => $m->status,
-                'sumber'                => $m->sumber,
+            'jumlah' => $milestones->count(),
+            'data' => $milestones->map(fn ($m) => [
+                'id' => $m->id,
+                'urutan' => $m->urutan,
+                'nama' => $m->nama,
+                'tanggal_target' => $m->tanggal_target?->format('d/m/Y'),
+                'tanggal_selesai' => $m->tanggal_selesai_aktual?->format('d/m/Y'),
+                'progres_target_persen' => $m->progres_target_persen.'%',
+                'status' => $m->status,
+                'sumber' => $m->sumber,
             ])->toArray(),
         ];
     }
@@ -1579,7 +1782,7 @@ class AiChatService
     private function toolTerminPekerjaan(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) {
+        if (! $pekerjaan) {
             return ['error' => 'Pekerjaan tidak ditemukan'];
         }
 
@@ -1588,53 +1791,55 @@ class AiChatService
 
         return [
             'pekerjaan' => $pekerjaan->nama_pekerjaan,
-            'jumlah'    => $termin->count(),
-            'data'      => $termin->map(fn ($t) => [
-                'id'                    => $t->id,
-                'nomor'                 => $t->nomor_termin,
-                'nama'                  => $t->nama_termin,
-                'nilai'                 => 'Rp ' . number_format((float) $t->nilai_termin, 0, ',', '.'),
-                'syarat_progres'        => $t->persen_progres_syarat . '%',
-                'status'                => $t->status,
-                'syarat_terpenuhi'      => $t->is_syarat_terpenuhi,
-                'tanggal_pengajuan'     => $t->tanggal_pengajuan?->format('d/m/Y'),
+            'jumlah' => $termin->count(),
+            'data' => $termin->map(fn ($t) => [
+                'id' => $t->id,
+                'nomor' => $t->nomor_termin,
+                'nama' => $t->nama_termin,
+                'nilai' => 'Rp '.number_format((float) $t->nilai_termin, 0, ',', '.'),
+                'syarat_progres' => $t->persen_progres_syarat.'%',
+                'status' => $t->status,
+                'syarat_terpenuhi' => $t->is_syarat_terpenuhi,
+                'tanggal_pengajuan' => $t->tanggal_pengajuan?->format('d/m/Y'),
             ])->toArray(),
         ];
     }
 
     private function toolRencanaPengadaan(array $input): array
     {
-        if (!empty($input['pekerjaan_id'])) {
+        if (! empty($input['pekerjaan_id'])) {
             $pekerjaan = Pekerjaan::find((int) $input['pekerjaan_id']);
-            if (!$pekerjaan) {
+            if (! $pekerjaan) {
                 return ['error' => 'Pekerjaan tidak ditemukan'];
             }
-            $items = \App\Models\RencanaPengadaan::where('pekerjaan_id', $pekerjaan->id)->get();
+            $items = RencanaPengadaan::where('pekerjaan_id', $pekerjaan->id)->get();
+
             return [
-                'pekerjaan'   => $pekerjaan->nama_pekerjaan,
+                'pekerjaan' => $pekerjaan->nama_pekerjaan,
                 'jumlah_item' => $items->count(),
-                'items'       => $items->map(fn ($r) => [
-                    'nama_item'    => $r->nama_item,
-                    'satuan'       => $r->satuan,
-                    'volume'       => $r->volume_rencana,
-                    'harga_satuan' => 'Rp ' . number_format((float) $r->harga_satuan_rencana, 0, ',', '.'),
+                'items' => $items->map(fn ($r) => [
+                    'nama_item' => $r->nama_item,
+                    'satuan' => $r->satuan,
+                    'volume' => $r->volume_rencana,
+                    'harga_satuan' => 'Rp '.number_format((float) $r->harga_satuan_rencana, 0, ',', '.'),
                 ])->toArray(),
             ];
         }
 
         // Tanpa id: proyek mana saja yang PUNYA rencana pengadaan.
-        $rows = \App\Models\RencanaPengadaan::selectRaw('pekerjaan_id, COUNT(*) as jml')
+        $rows = RencanaPengadaan::selectRaw('pekerjaan_id, COUNT(*) as jml')
             ->groupBy('pekerjaan_id')->get();
         if ($rows->isEmpty()) {
             return ['pesan' => 'Belum ada proyek yang memiliki rencana pengadaan.', 'data' => []];
         }
         $names = Pekerjaan::whereIn('id', $rows->pluck('pekerjaan_id'))->pluck('nama_pekerjaan', 'id');
+
         return [
             'jumlah_proyek' => $rows->count(),
-            'data'          => $rows->map(fn ($r) => [
+            'data' => $rows->map(fn ($r) => [
                 'pekerjaan_id' => $r->pekerjaan_id,
-                'pekerjaan'    => $names[$r->pekerjaan_id] ?? null,
-                'jumlah_item'  => (int) $r->jml,
+                'pekerjaan' => $names[$r->pekerjaan_id] ?? null,
+                'jumlah_item' => (int) $r->jml,
             ])->values()->toArray(),
         ];
     }
@@ -1642,25 +1847,27 @@ class AiChatService
     private function toolListTermin(array $input): array
     {
         $q = TerminPembayaran::query()->with('pekerjaan');
-        if (!empty($input['pekerjaan_id'])) {
+        if (! empty($input['pekerjaan_id'])) {
             $q->where('pekerjaan_id', (int) $input['pekerjaan_id']);
         }
-        if (!empty($input['status'])) {
+        if (! empty($input['status'])) {
             $q->where('status', $input['status']);
         }
         $items = $q->orderBy('pekerjaan_id')->orderBy('nomor_termin')->get();
         if ($items->isEmpty()) {
-            $f = !empty($input['status']) ? " dengan status '{$input['status']}'" : '';
+            $f = ! empty($input['status']) ? " dengan status '{$input['status']}'" : '';
+
             return ['pesan' => "Tidak ada termin{$f}.", 'data' => []];
         }
+
         return [
             'jumlah' => $items->count(),
-            'data'   => $items->map(fn ($t) => [
-                'pekerjaan'         => $t->pekerjaan?->nama_pekerjaan,
-                'nomor'             => $t->nomor_termin,
-                'nama'              => $t->nama_termin,
-                'nilai'             => 'Rp ' . number_format((float) $t->nilai_termin, 0, ',', '.'),
-                'status'            => $t->status,
+            'data' => $items->map(fn ($t) => [
+                'pekerjaan' => $t->pekerjaan?->nama_pekerjaan,
+                'nomor' => $t->nomor_termin,
+                'nama' => $t->nama_termin,
+                'nilai' => 'Rp '.number_format((float) $t->nilai_termin, 0, ',', '.'),
+                'status' => $t->status,
                 'tanggal_pengajuan' => $t->tanggal_pengajuan?->format('d/m/Y'),
             ])->toArray(),
         ];
@@ -1669,7 +1876,7 @@ class AiChatService
     private function toolUpdateProgres(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) {
+        if (! $pekerjaan) {
             return ['error' => 'Pekerjaan tidak ditemukan'];
         }
 
@@ -1681,41 +1888,41 @@ class AiChatService
         $oldProgres = $pekerjaan->progres_persen;
         $pekerjaan->update([
             'progres_persen' => $progres,
-            'updated_by'     => auth()->id(),
+            'updated_by' => auth()->id(),
         ]);
 
         return [
-            'sukses'      => true,
-            'pekerjaan'   => $pekerjaan->nama_pekerjaan,
-            'progres_dari'=> $oldProgres . '%',
-            'progres_ke'  => $progres . '%',
-            'pesan'       => "Progres '{$pekerjaan->nama_pekerjaan}' berhasil diupdate dari {$oldProgres}% ke {$progres}%.",
+            'sukses' => true,
+            'pekerjaan' => $pekerjaan->nama_pekerjaan,
+            'progres_dari' => $oldProgres.'%',
+            'progres_ke' => $progres.'%',
+            'pesan' => "Progres '{$pekerjaan->nama_pekerjaan}' berhasil diupdate dari {$oldProgres}% ke {$progres}%.",
         ];
     }
 
     private function toolMilestoneSelesai(array $input): array
     {
         $milestone = MilestonePekerjaan::find((int) ($input['milestone_id'] ?? 0));
-        if (!$milestone) {
+        if (! $milestone) {
             return ['error' => 'Milestone tidak ditemukan'];
         }
 
         $milestone->update([
-            'status'                 => 'selesai',
+            'status' => 'selesai',
             'tanggal_selesai_aktual' => today(),
         ]);
 
         return [
-            'sukses'    => true,
+            'sukses' => true,
             'milestone' => $milestone->nama,
-            'pesan'     => "Milestone '{$milestone->nama}' ditandai selesai pada " . today()->format('d/m/Y') . ".",
+            'pesan' => "Milestone '{$milestone->nama}' ditandai selesai pada ".today()->format('d/m/Y').'.',
         ];
     }
 
     private function toolApproveTermin(array $input): array
     {
         $termin = TerminPembayaran::with('pekerjaan')->find((int) ($input['termin_id'] ?? 0));
-        if (!$termin) {
+        if (! $termin) {
             return ['error' => 'Termin tidak ditemukan'];
         }
 
@@ -1724,17 +1931,17 @@ class AiChatService
         }
 
         $termin->update([
-            'status'              => 'disetujui',
+            'status' => 'disetujui',
             'tanggal_persetujuan' => today(),
-            'approved_by'         => auth()->id(),
-            'catatan_ppk'         => $input['catatan'] ?? $termin->catatan_ppk,
+            'approved_by' => auth()->id(),
+            'catatan_ppk' => $input['catatan'] ?? $termin->catatan_ppk,
         ]);
 
         return [
-            'sukses'   => true,
-            'termin'   => $termin->nama_termin,
-            'pekerjaan'=> $termin->pekerjaan?->nama_pekerjaan,
-            'pesan'    => "Termin '{$termin->nama_termin}' untuk '{$termin->pekerjaan?->nama_pekerjaan}' berhasil disetujui.",
+            'sukses' => true,
+            'termin' => $termin->nama_termin,
+            'pekerjaan' => $termin->pekerjaan?->nama_pekerjaan,
+            'pesan' => "Termin '{$termin->nama_termin}' untuk '{$termin->pekerjaan?->nama_pekerjaan}' berhasil disetujui.",
         ];
     }
 
@@ -1744,21 +1951,25 @@ class AiChatService
     private function toolCreatePekerjaan(array $input): array
     {
         try {
-            $bidang = \App\Models\Master\Bidang::where('kode', $input['bidang_kode'] ?? '')->first();
-            if (!$bidang) {
+            $bidang = Bidang::where('kode', $input['bidang_kode'] ?? '')->first();
+            if (! $bidang) {
                 return ['error' => "Bidang dengan kode '{$input['bidang_kode']}' tidak ditemukan. Pilihan: BG, JL, DR, IR"];
             }
 
             // G2: anti ketuker angka — nilai_kontrak tidak boleh > nilai_pagu.
-            if (($err = $this->assertNilaiSane($input)) !== null) return $err;
+            if (($err = $this->assertNilaiSane($input)) !== null) {
+                return $err;
+            }
 
             // G3a + G3b: tolak field kritis ngawur / tidak cocok dokumen (skip kalau force_create).
-            if (empty($input['force_create']) && ($err = $this->assertFieldKritisValid($input)) !== null) return $err;
+            if (empty($input['force_create']) && ($err = $this->assertFieldKritisValid($input)) !== null) {
+                return $err;
+            }
 
             // === DUPLICATE DETECTION ===
             $namaInput = trim($input['nama_pekerjaan']);
             $tahun = $input['tahun_anggaran'] ?? (int) date('Y');
-            $force = !empty($input['force_create']);
+            $force = ! empty($input['force_create']);
 
             // G8: exact-duplicate guard — nama + bidang + tahun sama PERSIS tetap diblok
             // WALAU force_create=true. force cuma untuk skip nag "nama mirip", BUKAN izin
@@ -1770,18 +1981,18 @@ class AiChatService
                     ->first();
                 if ($exact) {
                     return [
-                        'error'       => 'exact_duplicate_found',
-                        'pesan'       => "Sudah ada proyek dengan NAMA + bidang + tahun SAMA PERSIS: ID {$exact->id} ('{$exact->nama_pekerjaan}'"
-                            . ($exact->no_spk ? ", SPK {$exact->no_spk}" : '') . "). Ini kemungkinan besar duplikat. "
-                            . "JANGAN bikin baru — pakai existing (lanjut assign vendor/personil/RAB ke ID {$exact->id}). "
-                            . "Kalau user BENAR-BENAR sengaja mau proyek kembar (jarang), panggil ulang dengan allow_duplicate=true.",
+                        'error' => 'exact_duplicate_found',
+                        'pesan' => "Sudah ada proyek dengan NAMA + bidang + tahun SAMA PERSIS: ID {$exact->id} ('{$exact->nama_pekerjaan}'"
+                            .($exact->no_spk ? ", SPK {$exact->no_spk}" : '').'). Ini kemungkinan besar duplikat. '
+                            ."JANGAN bikin baru — pakai existing (lanjut assign vendor/personil/RAB ke ID {$exact->id}). "
+                            .'Kalau user BENAR-BENAR sengaja mau proyek kembar (jarang), panggil ulang dengan allow_duplicate=true.',
                         'existing_id' => $exact->id,
                     ];
                 }
             }
 
             // 1. Exact match by no_spk + bidang + tahun (unique constraint)
-            if (!empty($input['no_spk'])) {
+            if (! empty($input['no_spk'])) {
                 $bySpk = Pekerjaan::where('no_spk', $input['no_spk'])
                     ->where('bidang_id', $bidang->id)
                     ->where('tahun_anggaran', $tahun)
@@ -1790,13 +2001,13 @@ class AiChatService
                     return [
                         'error' => 'duplicate_spk',
                         'pesan' => "Proyek dengan No SPK '{$input['no_spk']}' di bidang {$bidang->kode} TA {$tahun} sudah ada (ID: {$bySpk->id}, '{$bySpk->nama_pekerjaan}'). "
-                            . "ANTI-LOOP: JANGAN panggil create_pekerjaan lagi dengan SPK yang sama. Tanya user SEKALI: 'Mau update pekerjaan {$bySpk->id} atau ganti nomor SPK?'. "
-                            . "Kalau user jawab 'UPDATE / pakai existing / lanjut': SKIP create, langsung lanjut assign_vendor + assign_personil + create_rencana_pengadaan untuk pekerjaan_id={$bySpk->id}. "
-                            . "Kalau user jawab 'GANTI SPK': tanya nomor SPK baru, baru retry create_pekerjaan dengan SPK baru tsb.",
+                            ."ANTI-LOOP: JANGAN panggil create_pekerjaan lagi dengan SPK yang sama. Tanya user SEKALI: 'Mau update pekerjaan {$bySpk->id} atau ganti nomor SPK?'. "
+                            ."Kalau user jawab 'UPDATE / pakai existing / lanjut': SKIP create, langsung lanjut assign_vendor + assign_personil + create_rencana_pengadaan untuk pekerjaan_id={$bySpk->id}. "
+                            ."Kalau user jawab 'GANTI SPK': tanya nomor SPK baru, baru retry create_pekerjaan dengan SPK baru tsb.",
                         'existing_id' => $bySpk->id,
                         'existing_nama' => $bySpk->nama_pekerjaan,
                         'action_options' => [
-                            'update'         => "skip_create + lanjut STEP 5 dengan pekerjaan_id={$bySpk->id}",
+                            'update' => "skip_create + lanjut STEP 5 dengan pekerjaan_id={$bySpk->id}",
                             'ganti_spk_baru' => 'tanya user nomor SPK baru, lalu retry create',
                         ],
                     ];
@@ -1805,10 +2016,10 @@ class AiChatService
 
             // 2. Fuzzy name match (warning, bukan block — bisa di-override dengan force_create=true)
             // Auto-skip jika semua similar names punya SPK berbeda (jelas proyek beda)
-            if (!$force) {
+            if (! $force) {
                 $byName = Pekerjaan::where('bidang_id', $bidang->id)
                     ->where('tahun_anggaran', $tahun)
-                    ->where('nama_pekerjaan', 'LIKE', '%' . $namaInput . '%')
+                    ->where('nama_pekerjaan', 'LIKE', '%'.$namaInput.'%')
                     ->limit(3)
                     ->get(['id', 'nama_pekerjaan', 'no_spk']);
                 $inputSpk = $input['no_spk'] ?? '';
@@ -1822,11 +2033,11 @@ class AiChatService
                     return [
                         'warning' => 'similar_name_found',
                         'pesan' => "Ada {$byName->count()} proyek existing dengan nama mirip. "
-                            . "ANTI-LOOP RULES (WAJIB):\n"
-                            . "  1. Tampilkan list 'similar_info_only' ke user SEKALI dengan tanya: 'Mau pakai existing (ID X) atau bikin baru?'. Lalu BERHENTI tanya, tunggu user jawab.\n"
-                            . "  2. KALAU user di turn berikutnya jawab apapun yang artinya 'BIKIN BARU' (iya, ya, bikin baru, baru, lanjut, OK lanjut, force, ya proceed): SEGERA panggil create_pekerjaan SEKALI dengan force_create=true DAN semua field EXACT sama seperti turn sebelumnya (jangan ganti no_spk/tanggal/nilai dari list 'similar' — pakai dari hasil parse_kontrak). JANGAN return warning yang sama lagi.\n"
-                            . "  3. KALAU user jawab 'PAKAI EXISTING' (pakai yang ada, pakai #X, lanjut yang lama, update aja): JANGAN create_pekerjaan. Pakai pekerjaan_id dari list, langsung lanjut STEP 5 (assign_vendor/assign_personil/create_rencana_pengadaan).\n"
-                            . "  4. DATA di list 'similar_info_only' di bawah hanya untuk INFO ke user, DILARANG dipakai sebagai input create_pekerjaan.",
+                            ."ANTI-LOOP RULES (WAJIB):\n"
+                            ."  1. Tampilkan list 'similar_info_only' ke user SEKALI dengan tanya: 'Mau pakai existing (ID X) atau bikin baru?'. Lalu BERHENTI tanya, tunggu user jawab.\n"
+                            ."  2. KALAU user di turn berikutnya jawab apapun yang artinya 'BIKIN BARU' (iya, ya, bikin baru, baru, lanjut, OK lanjut, force, ya proceed): SEGERA panggil create_pekerjaan SEKALI dengan force_create=true DAN semua field EXACT sama seperti turn sebelumnya (jangan ganti no_spk/tanggal/nilai dari list 'similar' — pakai dari hasil parse_kontrak). JANGAN return warning yang sama lagi.\n"
+                            ."  3. KALAU user jawab 'PAKAI EXISTING' (pakai yang ada, pakai #X, lanjut yang lama, update aja): JANGAN create_pekerjaan. Pakai pekerjaan_id dari list, langsung lanjut STEP 5 (assign_vendor/assign_personil/create_rencana_pengadaan).\n"
+                            ."  4. DATA di list 'similar_info_only' di bawah hanya untuk INFO ke user, DILARANG dipakai sebagai input create_pekerjaan.",
                         'similar_info_only' => $byName->map(fn ($p) => [
                             'id' => $p->id,
                             'nama' => $p->nama_pekerjaan,
@@ -1837,56 +2048,56 @@ class AiChatService
             }
 
             $perusahaanId = $input['perusahaan_id'] ?? null;
-            if (!$perusahaanId && !empty($input['perusahaan_nama'])) {
+            if (! $perusahaanId && ! empty($input['perusahaan_nama'])) {
                 $namaVendor = trim($input['perusahaan_nama']);
                 // Fuzzy match — strip leading "PT."/"CV." for broader match
                 $stripped = preg_replace('/^(PT\.?|CV\.?)\s+/i', '', $namaVendor);
-                $p = \App\Models\Master\Perusahaan::where('nama', 'LIKE', '%' . $stripped . '%')->first();
-                if (!$p) {
+                $p = Perusahaan::where('nama', 'LIKE', '%'.$stripped.'%')->first();
+                if (! $p) {
                     // Auto-create kalau belum ada — better than orphan pekerjaan
                     try {
-                        $p = \App\Models\Master\Perusahaan::create([
-                            'nama'    => $namaVendor,
-                            'jenis'   => 'konsultan',
+                        $p = Perusahaan::create([
+                            'nama' => $namaVendor,
+                            'jenis' => 'konsultan',
                             'pic_nama' => $input['perusahaan_direktur'] ?? null,
                         ]);
                         logger()->info("Auto-created Perusahaan: {$namaVendor} (id={$p->id})");
                     } catch (\Throwable $e) {
-                        logger()->warning("Auto-create Perusahaan fail: " . $e->getMessage());
+                        logger()->warning('Auto-create Perusahaan fail: '.$e->getMessage());
                     }
                 }
                 $perusahaanId = $p?->id;
             }
 
             $jenisId = null;
-            if (!empty($input['jenis_pekerjaan'])) {
-                $j = \App\Models\Master\JenisPekerjaan::where('nama', 'LIKE', '%' . $input['jenis_pekerjaan'] . '%')->first();
+            if (! empty($input['jenis_pekerjaan'])) {
+                $j = JenisPekerjaan::where('nama', 'LIKE', '%'.$input['jenis_pekerjaan'].'%')->first();
                 $jenisId = $j?->id;
             }
 
             $pekerjaan = Pekerjaan::create([
-                'bidang_id'          => $bidang->id,
+                'bidang_id' => $bidang->id,
                 'jenis_pekerjaan_id' => $jenisId,
-                'perusahaan_id'      => $perusahaanId,
-                'tahun_anggaran'     => $input['tahun_anggaran'] ?? (int) date('Y'),
-                'nama_pekerjaan'     => $input['nama_pekerjaan'],
-                'nilai_pagu'         => $input['nilai_pagu'] ?? null,
-                'nilai_kontrak'      => $input['nilai_kontrak'] ?? null,
-                'no_spk'             => $input['no_spk'] ?? null,
-                'tanggal_spk'        => $input['tanggal_spk'] ?? null,
-                'no_spmk'            => $input['no_spmk'] ?? null,
-                'tanggal_mulai'      => $input['tanggal_mulai'] ?? null,
-                'tanggal_akhir'      => $input['tanggal_akhir'] ?? null,
-                'hari_kerja'         => $input['hari_kerja'] ?? null,
-                'lokasi'             => $input['lokasi'] ?? $input['lokasi_pekerjaan'] ?? null,
-                'created_by'         => auth()->id(),
-                'updated_by'         => auth()->id(),
+                'perusahaan_id' => $perusahaanId,
+                'tahun_anggaran' => $input['tahun_anggaran'] ?? (int) date('Y'),
+                'nama_pekerjaan' => $input['nama_pekerjaan'],
+                'nilai_pagu' => $input['nilai_pagu'] ?? null,
+                'nilai_kontrak' => $input['nilai_kontrak'] ?? null,
+                'no_spk' => $input['no_spk'] ?? null,
+                'tanggal_spk' => $input['tanggal_spk'] ?? null,
+                'no_spmk' => $input['no_spmk'] ?? null,
+                'tanggal_mulai' => $input['tanggal_mulai'] ?? null,
+                'tanggal_akhir' => $input['tanggal_akhir'] ?? null,
+                'hari_kerja' => $input['hari_kerja'] ?? null,
+                'lokasi' => $input['lokasi'] ?? $input['lokasi_pekerjaan'] ?? null,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
             ]);
 
             // Auto-create termin_pembayaran kalau dikirim — non-fatal per row
             $terminCount = 0;
             $terminErrors = [];
-            if (!empty($input['termin_pembayaran']) && is_array($input['termin_pembayaran'])) {
+            if (! empty($input['termin_pembayaran']) && is_array($input['termin_pembayaran'])) {
                 $nilaiKontrak = (float) ($input['nilai_kontrak'] ?? 0);
                 foreach ($input['termin_pembayaran'] as $i => $t) {
                     try {
@@ -1895,53 +2106,53 @@ class AiChatService
                             ? round($nilaiKontrak * $persenNilai / 100, 2)
                             : (float) ($t['nilai_termin'] ?? 0);
                         \DB::table('termin_pembayaran')->insert([
-                            'pekerjaan_id'          => $pekerjaan->id,
-                            'nomor_termin'          => (int) ($t['nomor_termin'] ?? ($i + 1)),
-                            'nama_termin'           => (string) ($t['nama_termin'] ?? 'Termin ' . ($i + 1)),
-                            'nilai_termin'          => $nilai,
+                            'pekerjaan_id' => $pekerjaan->id,
+                            'nomor_termin' => (int) ($t['nomor_termin'] ?? ($i + 1)),
+                            'nama_termin' => (string) ($t['nama_termin'] ?? 'Termin '.($i + 1)),
+                            'nilai_termin' => $nilai,
                             'persen_progres_syarat' => (float) ($t['persen_progres_syarat'] ?? 0),
-                            'status'                => 'draft',
-                            'catatan_pptk'          => isset($t['syarat_dokumen']) ? (string) $t['syarat_dokumen'] : null,
-                            'created_by'            => auth()->id(),
-                            'created_at'            => now(),
-                            'updated_at'            => now(),
+                            'status' => 'draft',
+                            'catatan_pptk' => isset($t['syarat_dokumen']) ? (string) $t['syarat_dokumen'] : null,
+                            'created_by' => auth()->id(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
                         ]);
                         $terminCount++;
                     } catch (\Throwable $tEx) {
-                        $terminErrors[] = "Termin #{$i} gagal: " . $tEx->getMessage();
-                        logger()->warning("Termin insert fail for pekerjaan {$pekerjaan->id}: " . $tEx->getMessage());
+                        $terminErrors[] = "Termin #{$i} gagal: ".$tEx->getMessage();
+                        logger()->warning("Termin insert fail for pekerjaan {$pekerjaan->id}: ".$tEx->getMessage());
                     }
                 }
             }
 
             // Auto-inject cached parse results (server-side, no AI forwarding needed)
             $agg = $this->loadAggregated();
-            logger()->info('AI create_pekerjaan: agg jadwal=' . count($agg['jadwal_pelaksanaan'] ?? []) . ' input jadwal=' . count($input['jadwal_pelaksanaan'] ?? []) . ' input milestones=' . count($input['milestones'] ?? []));
-            if (!empty($agg)) {
-                if (empty($input['jadwal_pelaksanaan']) && !empty($agg['jadwal_pelaksanaan'])) {
+            logger()->info('AI create_pekerjaan: agg jadwal='.count($agg['jadwal_pelaksanaan'] ?? []).' input jadwal='.count($input['jadwal_pelaksanaan'] ?? []).' input milestones='.count($input['milestones'] ?? []));
+            if (! empty($agg)) {
+                if (empty($input['jadwal_pelaksanaan']) && ! empty($agg['jadwal_pelaksanaan'])) {
                     $input['jadwal_pelaksanaan'] = $agg['jadwal_pelaksanaan'];
-                    logger()->info('AI injected jadwal from cache: ' . count($agg['jadwal_pelaksanaan']));
+                    logger()->info('AI injected jadwal from cache: '.count($agg['jadwal_pelaksanaan']));
                 }
-                if (empty($input['keluaran_kak']) && !empty($agg['keluaran_kak'])) {
+                if (empty($input['keluaran_kak']) && ! empty($agg['keluaran_kak'])) {
                     $input['keluaran_kak'] = $agg['keluaran_kak'];
                 }
-                if (empty($input['milestones']) && !empty($agg['milestones'])) {
+                if (empty($input['milestones']) && ! empty($agg['milestones'])) {
                     $input['milestones'] = $agg['milestones'];
                 }
-                if (empty($input['termin_pembayaran']) && !empty($agg['termin_pembayaran'])) {
+                if (empty($input['termin_pembayaran']) && ! empty($agg['termin_pembayaran'])) {
                     $input['termin_pembayaran'] = $agg['termin_pembayaran'];
                 }
             }
 
             // Smart merge: kalau jadwal_pelaksanaan tersedia, generate milestone kaya
             // dari jadwal kontrak + keluaran KAK. Kalau kosong, fallback ke milestones biasa.
-            if (!empty($input['jadwal_pelaksanaan'])) {
+            if (! empty($input['jadwal_pelaksanaan'])) {
                 $merged = $this->mergeMilestonesFromParsedDocs(
                     $input['jadwal_pelaksanaan'],
                     $input['keluaran_kak'] ?? [],
                     $input['tanggal_mulai'] ?? null
                 );
-                if (!empty($merged)) {
+                if (! empty($merged)) {
                     $input['milestones'] = $merged;
                 }
             }
@@ -1951,9 +2162,9 @@ class AiChatService
             // auto-laporan tetap jalan, user bisa add milestone manual nanti).
             $milestoneCount = 0;
             $milestoneErrors = [];
-            if (!empty($input['milestones']) && is_array($input['milestones'])) {
-                $tanggalMulai = !empty($input['tanggal_mulai'])
-                    ? \Carbon\Carbon::parse($input['tanggal_mulai'])
+            if (! empty($input['milestones']) && is_array($input['milestones'])) {
+                $tanggalMulai = ! empty($input['tanggal_mulai'])
+                    ? Carbon::parse($input['tanggal_mulai'])
                     : null;
                 foreach ($input['milestones'] as $i => $m) {
                     try {
@@ -1962,16 +2173,16 @@ class AiChatService
                             ? $tanggalMulai->copy()->addDays($hari)->format('Y-m-d')
                             : (string) ($m['tanggal_target'] ?? now()->format('Y-m-d'));
                         $milestoneId = \DB::table('milestone_pekerjaan')->insertGetId([
-                            'pekerjaan_id'          => $pekerjaan->id,
-                            'urutan'                => (int) ($m['urutan'] ?? ($i + 1)),
-                            'nama'                  => (string) ($m['nama'] ?? 'Milestone ' . ($i + 1)),
-                            'deskripsi'             => isset($m['deskripsi']) ? (string) $m['deskripsi'] : null,
-                            'tanggal_target'        => $tgl,
+                            'pekerjaan_id' => $pekerjaan->id,
+                            'urutan' => (int) ($m['urutan'] ?? ($i + 1)),
+                            'nama' => (string) ($m['nama'] ?? 'Milestone '.($i + 1)),
+                            'deskripsi' => isset($m['deskripsi']) ? (string) $m['deskripsi'] : null,
+                            'tanggal_target' => $tgl,
                             'progres_target_persen' => (float) ($m['progres_target_persen'] ?? 0),
-                            'status'                => 'belum_mulai',
-                            'sumber'                => in_array($m['sumber'] ?? 'manual', ['kontrak','generated_ai','manual']) ? $m['sumber'] : 'manual',
-                            'created_at'            => now(),
-                            'updated_at'            => now(),
+                            'status' => 'belum_mulai',
+                            'sumber' => in_array($m['sumber'] ?? 'manual', ['kontrak', 'generated_ai', 'manual']) ? $m['sumber'] : 'manual',
+                            'created_at' => now(),
+                            'updated_at' => now(),
                         ]);
                         $milestoneCount++;
 
@@ -1980,15 +2191,15 @@ class AiChatService
                             try {
                                 \DB::table('milestone_checklist_items')->insert([
                                     'milestone_pekerjaan_id' => $milestoneId,
-                                    'tipe'                   => 'kegiatan',
-                                    'nama'                   => (string) $kegiatanNama,
-                                    'is_done_vendor'         => false,
-                                    'is_done_admin'          => false,
-                                    'created_at'             => now(),
-                                    'updated_at'             => now(),
+                                    'tipe' => 'kegiatan',
+                                    'nama' => (string) $kegiatanNama,
+                                    'is_done_vendor' => false,
+                                    'is_done_admin' => false,
+                                    'created_at' => now(),
+                                    'updated_at' => now(),
                                 ]);
                             } catch (\Throwable $ciEx) {
-                                logger()->warning("Checklist item (kegiatan) insert fail for milestone {$milestoneId}: " . $ciEx->getMessage());
+                                logger()->warning("Checklist item (kegiatan) insert fail for milestone {$milestoneId}: ".$ciEx->getMessage());
                             }
                         }
 
@@ -1996,20 +2207,20 @@ class AiChatService
                             try {
                                 \DB::table('milestone_checklist_items')->insert([
                                     'milestone_pekerjaan_id' => $milestoneId,
-                                    'tipe'                   => 'deliverable',
-                                    'nama'                   => (string) $deliverableNama,
-                                    'is_done_vendor'         => false,
-                                    'is_done_admin'          => false,
-                                    'created_at'             => now(),
-                                    'updated_at'             => now(),
+                                    'tipe' => 'deliverable',
+                                    'nama' => (string) $deliverableNama,
+                                    'is_done_vendor' => false,
+                                    'is_done_admin' => false,
+                                    'created_at' => now(),
+                                    'updated_at' => now(),
                                 ]);
                             } catch (\Throwable $ciEx) {
-                                logger()->warning("Checklist item (deliverable) insert fail for milestone {$milestoneId}: " . $ciEx->getMessage());
+                                logger()->warning("Checklist item (deliverable) insert fail for milestone {$milestoneId}: ".$ciEx->getMessage());
                             }
                         }
                     } catch (\Throwable $mEx) {
-                        $milestoneErrors[] = "Milestone #{$i} ('{$m['nama']}') gagal: " . $mEx->getMessage();
-                        logger()->warning("Milestone insert fail for pekerjaan {$pekerjaan->id}: " . $mEx->getMessage());
+                        $milestoneErrors[] = "Milestone #{$i} ('{$m['nama']}') gagal: ".$mEx->getMessage();
+                        logger()->warning("Milestone insert fail for pekerjaan {$pekerjaan->id}: ".$mEx->getMessage());
                     }
                 }
             }
@@ -2017,10 +2228,10 @@ class AiChatService
             // Auto-generate Laporan Pendahuluan draft (best-effort, jangan gagalin create)
             $laporan = null;
             try {
-                $laporan = app(\App\Services\DocumentGeneratorService::class)
+                $laporan = app(DocumentGeneratorService::class)
                     ->generateLaporanPendahuluan($pekerjaan->id);
             } catch (\Throwable $e) {
-                logger()->warning("Auto-generate laporan_pendahuluan fail: " . $e->getMessage());
+                logger()->warning('Auto-generate laporan_pendahuluan fail: '.$e->getMessage());
             }
 
             // G7: proyek sudah jadi → buang cache parse (jadwal/termin/truth) biar
@@ -2029,7 +2240,7 @@ class AiChatService
 
             $msg = "Proyek '{$pekerjaan->nama_pekerjaan}' berhasil dibuat (ID: {$pekerjaan->id}, termin: {$terminCount}, milestones: {$milestoneCount})";
             if ($laporan) {
-                $msg .= ". Laporan Pendahuluan draft otomatis dibuat & tersedia di tab Dokumen + chat.";
+                $msg .= '. Laporan Pendahuluan draft otomatis dibuat & tersedia di tab Dokumen + chat.';
             }
 
             return [
@@ -2047,7 +2258,9 @@ class AiChatService
 
     private function mergeMilestonesFromParsedDocs(array $jadwal, array $keluaran, ?string $tanggalMulai): array
     {
-        if (empty($jadwal)) return [];
+        if (empty($jadwal)) {
+            return [];
+        }
 
         usort($jadwal, fn ($a, $b) => ($a['minggu_selesai'] ?? 0) <=> ($b['minggu_selesai'] ?? 0));
 
@@ -2058,12 +2271,12 @@ class AiChatService
             $hariSetelahMulai = ((int) ($fase['minggu_selesai'] ?? 0)) * 7;
             $progres = round(($i + 1) / $total * 100, 2);
 
-            $kegiatanList   = array_values(array_filter(array_map('strval', $fase['kegiatan'] ?? [])));
+            $kegiatanList = array_values(array_filter(array_map('strval', $fase['kegiatan'] ?? [])));
             $deliverableIsi = [];
 
             $deskripsiParts = [];
-            if (!empty($kegiatanList)) {
-                $deskripsiParts[] = 'Kegiatan:' . "\n" . implode("\n", array_map(fn ($k) => '• ' . $k, $kegiatanList));
+            if (! empty($kegiatanList)) {
+                $deskripsiParts[] = 'Kegiatan:'."\n".implode("\n", array_map(fn ($k) => '• '.$k, $kegiatanList));
             }
 
             if (isset($keluaran[$i]) && is_array($keluaran[$i])) {
@@ -2071,23 +2284,23 @@ class AiChatService
                 $deliverableIsi = array_values(array_filter(array_map('strval', $k['isi'] ?? [])));
                 $deliverableHeader = ($k['nama'] ?? 'Deliverable');
                 $deliverablePart = $deliverableHeader;
-                if (!empty($deliverableIsi)) {
-                    $deliverablePart .= "\n" . implode("\n", array_map(fn ($d) => '• ' . $d, $deliverableIsi));
+                if (! empty($deliverableIsi)) {
+                    $deliverablePart .= "\n".implode("\n", array_map(fn ($d) => '• '.$d, $deliverableIsi));
                 }
-                $deskripsiParts[] = 'Deliverable:' . "\n" . $deliverablePart;
+                $deskripsiParts[] = 'Deliverable:'."\n".$deliverablePart;
             }
 
-            $deskripsi = !empty($deskripsiParts) ? implode("\n\n", $deskripsiParts) : null;
+            $deskripsi = ! empty($deskripsiParts) ? implode("\n\n", $deskripsiParts) : null;
 
             $result[] = [
-                'urutan'                => $i + 1,
-                'nama'                  => (string) ($fase['nama_fase'] ?? 'Fase ' . ($i + 1)),
-                'deskripsi'             => $deskripsi,
-                'hari_setelah_mulai'    => $hariSetelahMulai,
+                'urutan' => $i + 1,
+                'nama' => (string) ($fase['nama_fase'] ?? 'Fase '.($i + 1)),
+                'deskripsi' => $deskripsi,
+                'hari_setelah_mulai' => $hariSetelahMulai,
                 'progres_target_persen' => $progres,
-                'sumber'                => 'kontrak',
-                'kegiatan'              => $kegiatanList,
-                'deliverable_items'     => $deliverableIsi,
+                'sumber' => 'kontrak',
+                'kegiatan' => $kegiatanList,
+                'deliverable_items' => $deliverableIsi,
             ];
         }
 
@@ -2097,69 +2310,92 @@ class AiChatService
     private function toolUpdatePekerjaan(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
-        $fields = ['nama_pekerjaan','nilai_pagu','nilai_kontrak','no_spk','tanggal_spk','tanggal_mulai','tanggal_akhir','hari_kerja','progres_persen','catatan'];
+        $fields = ['nama_pekerjaan', 'nilai_pagu', 'nilai_kontrak', 'no_spk', 'tanggal_spk', 'tanggal_mulai', 'tanggal_akhir', 'hari_kerja', 'progres_persen', 'catatan'];
         $update = [];
-        foreach ($fields as $f) if (array_key_exists($f, $input)) $update[$f] = $input[$f];
-        if (empty($update)) return ['error' => 'Tidak ada field yang diupdate'];
+        foreach ($fields as $f) {
+            if (array_key_exists($f, $input)) {
+                $update[$f] = $input[$f];
+            }
+        }
+        if (empty($update)) {
+            return ['error' => 'Tidak ada field yang diupdate'];
+        }
 
         // G2: cek hasil akhir (merge existing + update) — kontrak tidak boleh > pagu.
-        $pagu    = array_key_exists('nilai_pagu', $update) ? $update['nilai_pagu'] : $pekerjaan->nilai_pagu;
+        $pagu = array_key_exists('nilai_pagu', $update) ? $update['nilai_pagu'] : $pekerjaan->nilai_pagu;
         $kontrak = array_key_exists('nilai_kontrak', $update) ? $update['nilai_kontrak'] : $pekerjaan->nilai_kontrak;
         if ($pagu !== null && $kontrak !== null && (float) $kontrak > (float) $pagu) {
-            return ['error' => "Ditolak: nilai_kontrak (Rp " . number_format((float) $kontrak, 0, ',', '.') . ") > nilai_pagu (Rp " . number_format((float) $pagu, 0, ',', '.') . "). Kemungkinan ketukar — cek lagi."];
+            return ['error' => 'Ditolak: nilai_kontrak (Rp '.number_format((float) $kontrak, 0, ',', '.').') > nilai_pagu (Rp '.number_format((float) $pagu, 0, ',', '.').'). Kemungkinan ketukar — cek lagi.'];
         }
 
         $update['updated_by'] = auth()->id();
         $pekerjaan->update($update);
-        return ['sukses' => true, 'pesan' => "Pekerjaan '{$pekerjaan->nama_pekerjaan}' diupdate (" . count($update) . " field)"];
+
+        return ['sukses' => true, 'pesan' => "Pekerjaan '{$pekerjaan->nama_pekerjaan}' diupdate (".count($update).' field)'];
     }
 
     private function toolDeletePekerjaan(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
         $nama = $pekerjaan->nama_pekerjaan;
         // G4: soft delete (model pakai SoftDeletes) — bisa dipulihkan, JANGAN forceDelete.
         $pekerjaan->delete();
-        return ['sukses' => true, 'pesan' => "Pekerjaan '{$nama}' dipindahkan ke tong sampah (bisa dipulihkan admin). Alasan: " . ($input['alasan'] ?? '-')];
+
+        return ['sukses' => true, 'pesan' => "Pekerjaan '{$nama}' dipindahkan ke tong sampah (bisa dipulihkan admin). Alasan: ".($input['alasan'] ?? '-')];
     }
 
     private function toolAssignVendor(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
         $perusahaanId = $input['perusahaan_id'] ?? null;
-        if (!$perusahaanId && !empty($input['perusahaan_nama'])) {
-            $p = \App\Models\Master\Perusahaan::where('nama', 'LIKE', '%' . $input['perusahaan_nama'] . '%')->first();
-            if (!$p) return ['error' => "Vendor '{$input['perusahaan_nama']}' tidak ditemukan di master perusahaan"];
+        if (! $perusahaanId && ! empty($input['perusahaan_nama'])) {
+            $p = Perusahaan::where('nama', 'LIKE', '%'.$input['perusahaan_nama'].'%')->first();
+            if (! $p) {
+                return ['error' => "Vendor '{$input['perusahaan_nama']}' tidak ditemukan di master perusahaan"];
+            }
             $perusahaanId = $p->id;
         }
-        if (!$perusahaanId) return ['error' => 'Harus kasih perusahaan_id atau perusahaan_nama'];
+        if (! $perusahaanId) {
+            return ['error' => 'Harus kasih perusahaan_id atau perusahaan_nama'];
+        }
 
         $pekerjaan->update(['perusahaan_id' => $perusahaanId]);
-        $vendor = \App\Models\Master\Perusahaan::find($perusahaanId);
+        $vendor = Perusahaan::find($perusahaanId);
+
         return ['sukses' => true, 'pesan' => "Vendor '{$vendor->nama}' di-assign ke '{$pekerjaan->nama_pekerjaan}'"];
     }
 
     private function toolAssignPersonil(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
         $taId = $input['tenaga_ahli_id'] ?? null;
-        if (!$taId && !empty($input['nama_tenaga_ahli'])) {
-            $ta = \App\Models\Master\TenagaAhli::firstOrCreate(
+        if (! $taId && ! empty($input['nama_tenaga_ahli'])) {
+            $ta = TenagaAhli::firstOrCreate(
                 ['nama' => $input['nama_tenaga_ahli']],
                 ['perusahaan_id' => $pekerjaan->perusahaan_id, 'is_active' => true],
             );
             $taId = $ta->id;
         }
-        if (!$taId) return ['error' => 'Harus kasih tenaga_ahli_id atau nama_tenaga_ahli'];
+        if (! $taId) {
+            return ['error' => 'Harus kasih tenaga_ahli_id atau nama_tenaga_ahli'];
+        }
 
-        $personil = \App\Models\PekerjaanPersonil::updateOrCreate(
+        $personil = PekerjaanPersonil::updateOrCreate(
             ['pekerjaan_id' => $pekerjaan->id, 'tenaga_ahli_id' => $taId],
             [
                 'jabatan_kontrak' => $input['jabatan_kontrak'],
@@ -2167,20 +2403,25 @@ class AiChatService
                 'is_active' => true,
             ],
         );
-        $ta = \App\Models\Master\TenagaAhli::find($taId);
+        $ta = TenagaAhli::find($taId);
+
         return ['sukses' => true, 'pesan' => "Personil '{$ta->nama}' di-assign sebagai '{$input['jabatan_kontrak']}'"];
     }
 
     private function toolCreateRencanaPengadaan(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
         $items = $input['items'] ?? [];
-        if (empty($items)) return ['error' => 'Items kosong'];
+        if (empty($items)) {
+            return ['error' => 'Items kosong'];
+        }
 
         $created = 0;
         foreach ($items as $item) {
-            \App\Models\RencanaPengadaan::create([
+            RencanaPengadaan::create([
                 'pekerjaan_id' => $pekerjaan->id,
                 'nama_item' => $item['nama_item'] ?? 'Item',
                 'satuan' => $item['satuan'] ?? 'Ls',
@@ -2191,6 +2432,7 @@ class AiChatService
             ]);
             $created++;
         }
+
         return ['sukses' => true, 'pesan' => "Bikin {$created} rencana pengadaan untuk '{$pekerjaan->nama_pekerjaan}'"];
     }
 
@@ -2200,9 +2442,13 @@ class AiChatService
     private function toolSubmitDailyReport(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
         $user = auth()->user();
-        if (!$user) return ['error' => 'User tidak login'];
+        if (! $user) {
+            return ['error' => 'User tidak login'];
+        }
 
         try {
             $lh = LaporanHarian::create([
@@ -2218,6 +2464,7 @@ class AiChatService
                 'submitted_at' => now(),
                 'status' => 'pending',
             ]);
+
             return ['sukses' => true, 'laporan_id' => $lh->id, 'pesan' => "Laporan {$lh->jenis} tanggal {$lh->tanggal_laporan} submitted (pending approve)"];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2227,29 +2474,37 @@ class AiChatService
     private function toolApproveDailyReport(array $input): array
     {
         $lh = LaporanHarian::find((int) ($input['laporan_id'] ?? 0));
-        if (!$lh) return ['error' => 'Laporan tidak ditemukan'];
+        if (! $lh) {
+            return ['error' => 'Laporan tidak ditemukan'];
+        }
         $lh->update(['status' => 'approved', 'alasan_rejected' => null]);
+
         return ['sukses' => true, 'pesan' => "Laporan #{$lh->id} approved"];
     }
 
     private function toolRejectDailyReport(array $input): array
     {
         $lh = LaporanHarian::find((int) ($input['laporan_id'] ?? 0));
-        if (!$lh) return ['error' => 'Laporan tidak ditemukan'];
+        if (! $lh) {
+            return ['error' => 'Laporan tidak ditemukan'];
+        }
         $lh->update(['status' => 'rejected', 'alasan_rejected' => $input['alasan']]);
+
         return ['sukses' => true, 'pesan' => "Laporan #{$lh->id} ditolak: {$input['alasan']}"];
     }
 
     private function toolSubmitRealisasi(array $input): array
     {
-        $rencana = \App\Models\RencanaPengadaan::find((int) ($input['rencana_pengadaan_id'] ?? 0));
-        if (!$rencana) return ['error' => 'Rencana pengadaan tidak ditemukan'];
+        $rencana = RencanaPengadaan::find((int) ($input['rencana_pengadaan_id'] ?? 0));
+        if (! $rencana) {
+            return ['error' => 'Rencana pengadaan tidak ditemukan'];
+        }
 
         $volBeli = (float) ($input['volume_beli'] ?? 0);
         $volPakai = (float) ($input['volume_dipakai'] ?? $volBeli);
 
         try {
-            $r = \App\Models\RealisasiPengadaan::create([
+            $r = RealisasiPengadaan::create([
                 'rencana_pengadaan_id' => $rencana->id,
                 'pekerjaan_id' => $rencana->pekerjaan_id,
                 'perusahaan_id' => $rencana->pekerjaan->perusahaan_id ?? auth()->user()?->perusahaan_id,
@@ -2264,6 +2519,7 @@ class AiChatService
                 'status' => 'submitted',
                 'created_by' => auth()->id(),
             ]);
+
             return ['sukses' => true, 'realisasi_id' => $r->id, 'pesan' => "Realisasi untuk '{$rencana->nama_item}' submitted"];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2272,24 +2528,32 @@ class AiChatService
 
     private function toolApproveRealisasi(array $input): array
     {
-        $r = \App\Models\RealisasiPengadaan::find((int) ($input['realisasi_id'] ?? 0));
-        if (!$r) return ['error' => 'Realisasi tidak ditemukan'];
+        $r = RealisasiPengadaan::find((int) ($input['realisasi_id'] ?? 0));
+        if (! $r) {
+            return ['error' => 'Realisasi tidak ditemukan'];
+        }
         $r->update(['status' => 'verified', 'verified_by' => auth()->id(), 'verified_at' => now()]);
+
         return ['sukses' => true, 'pesan' => "Realisasi #{$r->id} verified"];
     }
 
     private function toolRejectRealisasi(array $input): array
     {
-        $r = \App\Models\RealisasiPengadaan::find((int) ($input['realisasi_id'] ?? 0));
-        if (!$r) return ['error' => 'Realisasi tidak ditemukan'];
+        $r = RealisasiPengadaan::find((int) ($input['realisasi_id'] ?? 0));
+        if (! $r) {
+            return ['error' => 'Realisasi tidak ditemukan'];
+        }
         $r->update(['status' => 'rejected', 'catatan_pptk' => $input['alasan']]);
+
         return ['sukses' => true, 'pesan' => "Realisasi #{$r->id} ditolak: {$input['alasan']}"];
     }
 
     private function toolRequestTermin(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
         try {
             $t = TerminPembayaran::updateOrCreate(
@@ -2304,6 +2568,7 @@ class AiChatService
                     'created_by' => auth()->id(),
                 ],
             );
+
             return ['sukses' => true, 'termin_id' => $t->id, 'pesan' => "Termin '{$t->nama_termin}' diajukan, menunggu approve Superadmin"];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2313,8 +2578,11 @@ class AiChatService
     private function toolRejectTermin(array $input): array
     {
         $t = TerminPembayaran::find((int) ($input['termin_id'] ?? 0));
-        if (!$t) return ['error' => 'Termin tidak ditemukan'];
+        if (! $t) {
+            return ['error' => 'Termin tidak ditemukan'];
+        }
         $t->update(['status' => 'ditolak', 'catatan_ppk' => $input['alasan']]);
+
         return ['sukses' => true, 'pesan' => "Termin #{$t->id} ditolak: {$input['alasan']}"];
     }
 
@@ -2324,17 +2592,18 @@ class AiChatService
     private function toolInviteVendorUser(array $input): array
     {
         try {
-            $u = \App\Models\User::firstOrCreate(
+            $u = User::firstOrCreate(
                 ['email' => $input['email']],
                 [
                     'name' => $input['nama'],
-                    'password' => bcrypt(\Illuminate\Support\Str::random(16)),
+                    'password' => bcrypt(Str::random(16)),
                     'perusahaan_id' => $input['perusahaan_id'],
                     'no_telp' => $input['no_telp'] ?? null,
                     'is_active' => true,
                 ],
             );
             $u->syncRoles(['vendor']);
+
             return ['sukses' => true, 'user_id' => $u->id, 'pesan' => "Vendor user '{$u->email}' dibuat. Kirim password reset link manual."];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2344,16 +2613,17 @@ class AiChatService
     private function toolInviteStaffUser(array $input): array
     {
         try {
-            $u = \App\Models\User::firstOrCreate(
+            $u = User::firstOrCreate(
                 ['email' => $input['email']],
                 [
                     'name' => $input['nama'],
-                    'password' => bcrypt(\Illuminate\Support\Str::random(16)),
+                    'password' => bcrypt(Str::random(16)),
                     'perusahaan_id' => $input['perusahaan_id'],
                     'no_telp' => $input['no_telp'] ?? null,
                     'is_active' => true,
                 ],
             );
+
             // G5: JANGAN auto-kasih role 'vendor' (kelebihan akses). Role 'staff' belum ada
             // + scoping per-proyek butuh tabel staff_pekerjaan (migration → fase terpisah).
             // Default least-privilege: user dibuat tanpa role, admin set manual.
@@ -2365,26 +2635,34 @@ class AiChatService
 
     private function toolGrantAdminAccess(array $input): array
     {
-        $u = !empty($input['user_id'])
-            ? \App\Models\User::find($input['user_id'])
-            : \App\Models\User::where('email', $input['email'] ?? '')->first();
-        if (!$u) return ['error' => 'User tidak ditemukan'];
+        $u = ! empty($input['user_id'])
+            ? User::find($input['user_id'])
+            : User::where('email', $input['email'] ?? '')->first();
+        if (! $u) {
+            return ['error' => 'User tidak ditemukan'];
+        }
 
-        if (!empty($input['bidang_kode'])) {
-            $b = \App\Models\Master\Bidang::where('kode', $input['bidang_kode'])->first();
-            if ($b) $u->update(['bidang_id' => $b->id]);
+        if (! empty($input['bidang_kode'])) {
+            $b = Bidang::where('kode', $input['bidang_kode'])->first();
+            if ($b) {
+                $u->update(['bidang_id' => $b->id]);
+            }
         }
         $u->syncRoles(['admin_bidang']);
+
         return ['sukses' => true, 'pesan' => "User '{$u->email}' diberi role admin_bidang"];
     }
 
     private function toolRevokeAccess(array $input): array
     {
-        $u = !empty($input['user_id'])
-            ? \App\Models\User::find($input['user_id'])
-            : \App\Models\User::where('email', $input['email'] ?? '')->first();
-        if (!$u) return ['error' => 'User tidak ditemukan'];
+        $u = ! empty($input['user_id'])
+            ? User::find($input['user_id'])
+            : User::where('email', $input['email'] ?? '')->first();
+        if (! $u) {
+            return ['error' => 'User tidak ditemukan'];
+        }
         $u->update(['is_active' => false]);
+
         return ['sukses' => true, 'pesan' => "User '{$u->email}' di-deactivate"];
     }
 
@@ -2424,23 +2702,29 @@ class AiChatService
     private function toolGenerateBast(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
         if ((int) $pekerjaan->progres_persen < 100) {
             return ['error' => "Tidak bisa generate BAST. Progres baru {$pekerjaan->progres_persen}%. Wajib 100%."];
         }
+
         return $this->genericGenerate($input, 'generateBast', 'BAST');
     }
 
     private function genericGenerate(array $input, string $method, string $label): array
     {
         $pid = (int) ($input['pekerjaan_id'] ?? 0);
-        if (!$pid) return ['error' => 'pekerjaan_id wajib'];
+        if (! $pid) {
+            return ['error' => 'pekerjaan_id wajib'];
+        }
         try {
-            $gen = app(\App\Services\DocumentGeneratorService::class);
-            if (!method_exists($gen, $method)) {
+            $gen = app(DocumentGeneratorService::class);
+            if (! method_exists($gen, $method)) {
                 return ['error' => "Generator '{$label}' belum diimplement di DocumentGeneratorService::{$method}()"];
             }
             $result = $gen->$method($pid, $input);
+
             return ['sukses' => true, 'tipe' => $label, 'result' => $result];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2453,15 +2737,22 @@ class AiChatService
     private function toolParsePenawaran(array $input): array
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
-        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
-        if ($this->ocrPending($path)) return $this->ocrPendingResponse();
+        if (! $path) {
+            return ['error' => 'File tidak ditemukan: '.($input['file_path'] ?? '')];
+        }
+        if ($this->ocrPending($path)) {
+            return $this->ocrPendingResponse();
+        }
+
         return $this->parseDoc('penawaran', $path);
     }
 
     private function toolCrossCheckRab(array $input): array
     {
         $pekerjaan = Pekerjaan::with('rencanaPengadaan')->find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
         $totalRab = 0.0;
         foreach ($pekerjaan->rencanaPengadaan as $r) {
@@ -2487,18 +2778,19 @@ class AiChatService
             'persen_termin_dari_kontrak' => $terminSumPersen,
             'pesan' => $cocok
                 ? "RAB cocok dengan nilai kontrak. Termin sum: {$terminSumPersen}%"
-                : "PERINGATAN: RAB (Rp " . number_format($totalRabPpn, 0, ',', '.') . ") TIDAK sama dengan kontrak (Rp " . number_format($nilaiKontrak, 0, ',', '.') . "). Selisih Rp " . number_format($selisih, 0, ',', '.'),
+                : 'PERINGATAN: RAB (Rp '.number_format($totalRabPpn, 0, ',', '.').') TIDAK sama dengan kontrak (Rp '.number_format($nilaiKontrak, 0, ',', '.').'). Selisih Rp '.number_format($selisih, 0, ',', '.'),
         ];
     }
 
     private function toolSendWaVendor(array $input): array
     {
         $pekerjaan = Pekerjaan::with('perusahaan')->find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan || !$pekerjaan->perusahaan?->no_telp) {
+        if (! $pekerjaan || ! $pekerjaan->perusahaan?->no_telp) {
             return ['error' => 'Vendor tidak punya nomor telp di master'];
         }
         try {
-            app(\App\Services\WaGatewayService::class)->kirim($pekerjaan->perusahaan->no_telp, $input['pesan']);
+            app(WaGatewayService::class)->kirim($pekerjaan->perusahaan->no_telp, $input['pesan']);
+
             return ['sukses' => true, 'pesan' => "WA dikirim ke {$pekerjaan->perusahaan->nama}"];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2508,27 +2800,40 @@ class AiChatService
     private function toolSendWaStaff(array $input): array
     {
         $pekerjaan = Pekerjaan::find((int) ($input['pekerjaan_id'] ?? 0));
-        if (!$pekerjaan) return ['error' => 'Pekerjaan tidak ditemukan'];
+        if (! $pekerjaan) {
+            return ['error' => 'Pekerjaan tidak ditemukan'];
+        }
 
-        $users = \App\Models\User::where('perusahaan_id', $pekerjaan->perusahaan_id)
+        $users = User::where('perusahaan_id', $pekerjaan->perusahaan_id)
             ->where('is_active', true)
             ->whereNotNull('no_telp')
             ->get();
-        if ($users->isEmpty()) return ['error' => 'Tidak ada staff dengan nomor telp'];
+        if ($users->isEmpty()) {
+            return ['error' => 'Tidak ada staff dengan nomor telp'];
+        }
 
-        $wa = app(\App\Services\WaGatewayService::class);
+        $wa = app(WaGatewayService::class);
         $sent = 0;
         foreach ($users as $u) {
-            try { $wa->kirim($u->no_telp, $input['pesan']); $sent++; } catch (\Throwable) {}
+            try {
+                $wa->kirim($u->no_telp, $input['pesan']);
+                $sent++;
+            } catch (\Throwable) {
+            }
         }
+
         return ['sukses' => true, 'pesan' => "WA dikirim ke {$sent} staff"];
     }
 
     private function toolGetMyPekerjaan(): array
     {
         $u = auth()->user();
-        if (!$u) return ['error' => 'User tidak login'];
-        if (!$u->perusahaan_id) return ['error' => 'User tidak punya perusahaan_id (bukan vendor/staff)'];
+        if (! $u) {
+            return ['error' => 'User tidak login'];
+        }
+        if (! $u->perusahaan_id) {
+            return ['error' => 'User tidak punya perusahaan_id (bukan vendor/staff)'];
+        }
 
         $list = Pekerjaan::where('perusahaan_id', $u->perusahaan_id)
             ->with('statusPekerjaan')
@@ -2538,48 +2843,81 @@ class AiChatService
         return ['ok' => true, 'pekerjaan' => $list->map(fn ($p) => [
             'id' => $p->id,
             'nama' => $p->nama_pekerjaan,
-            'progres' => $p->progres_persen . '%',
+            'progres' => $p->progres_persen.'%',
             'tanggal_akhir' => $p->tanggal_akhir?->format('Y-m-d'),
         ])->all()];
     }
 
     private function toolSearchAuditLog(array $input): array
     {
-        $q = \Spatie\Activitylog\Models\Activity::query()->latest();
-        if (!empty($input['user_email'])) {
-            $uid = \App\Models\User::where('email', $input['user_email'])->value('id');
-            if ($uid) $q->where('causer_id', $uid);
+        $q = Activity::query()->latest();
+        if (! empty($input['user_email'])) {
+            $uid = User::where('email', $input['user_email'])->value('id');
+            if ($uid) {
+                $q->where('causer_id', $uid);
+            }
         }
-        if (!empty($input['pekerjaan_id'])) {
+        if (! empty($input['pekerjaan_id'])) {
             $q->where('subject_type', Pekerjaan::class)->where('subject_id', $input['pekerjaan_id']);
         }
-        if (!empty($input['tanggal_from'])) $q->where('created_at', '>=', $input['tanggal_from']);
-        if (!empty($input['tanggal_to']))   $q->where('created_at', '<=', $input['tanggal_to']);
+        if (! empty($input['tanggal_from'])) {
+            $q->where('created_at', '>=', $input['tanggal_from']);
+        }
+        if (! empty($input['tanggal_to'])) {
+            $q->where('created_at', '<=', $input['tanggal_to']);
+        }
 
         $list = $q->take((int) ($input['limit'] ?? 20))->get();
+
         return ['ok' => true, 'count' => $list->count(), 'logs' => $list->map(fn ($a) => [
             'ts' => $a->created_at?->format('Y-m-d H:i'),
             'event' => $a->event,
             'description' => $a->description,
-            'subject' => $a->subject_type . '#' . $a->subject_id,
+            'subject' => $a->subject_type.'#'.$a->subject_id,
             'causer' => $a->causer?->email,
         ])->all()];
     }
 
     private function toolListPerusahaan(array $input): array
     {
-        $q = \App\Models\Master\Perusahaan::query();
-        if (!empty($input['search'])) {
-            $q->where('nama', 'LIKE', '%' . $input['search'] . '%');
+        $q = Perusahaan::query();
+        if (! empty($input['search'])) {
+            // Tokenize per-kata (AND) biar "PT HERANDAS" cocok dgn "PT. HERANDAS ENGINEER SYSTEM".
+            $tokens = array_values(array_filter(
+                preg_split('/\s+/', trim($input['search'])),
+                fn ($t) => mb_strlen($t) >= 3 && ! in_array(mb_strtolower($t), ['proyek', 'vendor', 'perusahaan'], true)
+            ));
+            if (empty($tokens)) {
+                $tokens = [$input['search']];
+            }
+            foreach ($tokens as $t) {
+                $q->where('nama', 'LIKE', "%{$t}%");
+            }
         }
-        $list = $q->take((int) ($input['limit'] ?? 20))->get(['id', 'nama', 'jenis', 'npwp']);
-        return ['ok' => true, 'count' => $list->count(), 'data' => $list->all()];
+        $list = $q->take((int) ($input['limit'] ?? 20))->get();
+
+        return [
+            'ok' => true,
+            'count' => $list->count(),
+            'data' => $list->map(fn ($p) => [
+                'id' => $p->id,
+                'nama' => $p->nama,
+                'jenis' => $p->jenis,
+                'npwp' => $p->npwp,
+                'alamat' => $p->alamat,
+                'pic_nama' => $p->pic_nama,
+                'pic_telp' => $p->pic_telp,
+                'no_telp' => $p->no_telp,
+                'email' => $p->email,
+                'is_blacklisted' => (bool) $p->is_blacklisted,
+            ])->all(),
+        ];
     }
 
     private function toolCreatePerusahaan(array $input): array
     {
         try {
-            $p = \App\Models\Master\Perusahaan::create([
+            $p = Perusahaan::create([
                 'nama' => $input['nama'],
                 'jenis' => $input['jenis'] ?? (str_starts_with($input['nama'], 'CV') ? 'CV' : 'PT'),
                 'npwp' => $input['npwp'] ?? null,
@@ -2589,6 +2927,7 @@ class AiChatService
                 'pic_nama' => $input['pic_nama'] ?? null,
                 'is_blacklisted' => false,
             ]);
+
             return ['sukses' => true, 'perusahaan_id' => $p->id, 'pesan' => "Vendor '{$p->nama}' ditambahkan"];
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
@@ -2600,14 +2939,15 @@ class AiChatService
     // ============================================================
     private function toolListUploadedFiles(array $input): array
     {
-        $q = \App\Models\ChatUpload::query()
+        $q = ChatUpload::query()
             ->when(auth()->id(), fn ($q) => $q->where('user_id', auth()->id()))
             ->latest();
-        if (!empty($input['search'])) {
-            $q->where('original_name', 'LIKE', '%' . $input['search'] . '%');
+        if (! empty($input['search'])) {
+            $q->where('original_name', 'LIKE', '%'.$input['search'].'%');
         }
         $limit = min((int) ($input['limit'] ?? 10), 30);
         $files = $q->take($limit)->get(['id', 'original_name', 'abs_path', 'mime', 'size_bytes', 'is_scanned_pdf', 'created_at']);
+
         return [
             'ok' => true,
             'count' => $files->count(),
@@ -2625,28 +2965,33 @@ class AiChatService
 
     private function toolFindUploadedFile(array $input): array
     {
-        if (!empty($input['upload_id'])) {
-            $f = \App\Models\ChatUpload::find($input['upload_id']);
+        if (! empty($input['upload_id'])) {
+            $f = ChatUpload::find($input['upload_id']);
         } else {
             $kw = trim($input['name_keyword'] ?? '');
-            if (empty($kw)) return ['error' => 'Kasih name_keyword atau upload_id'];
-            $f = \App\Models\ChatUpload::query()
+            if (empty($kw)) {
+                return ['error' => 'Kasih name_keyword atau upload_id'];
+            }
+            $f = ChatUpload::query()
                 ->when(auth()->id(), fn ($q) => $q->where('user_id', auth()->id()))
-                ->where('original_name', 'LIKE', '%' . $kw . '%')
+                ->where('original_name', 'LIKE', '%'.$kw.'%')
                 ->latest()
                 ->first();
         }
-        if (!$f) return ['error' => 'File tidak ditemukan'];
-        if (!file_exists($f->abs_path)) {
+        if (! $f) {
+            return ['error' => 'File tidak ditemukan'];
+        }
+        if (! file_exists($f->abs_path)) {
             return ['error' => "File path '{$f->abs_path}' sudah tidak ada di filesystem (mungkin terhapus)"];
         }
+
         return [
             'ok' => true,
             'id' => $f->id,
             'name' => $f->original_name,
             'path' => $f->abs_path,
             'mime' => $f->mime,
-            'pesan' => "Pakai path ini sebagai file_path untuk parse_kak_pdf / parse_kontrak_pdf / parse_rab_pdf / ocr_pdf",
+            'pesan' => 'Pakai path ini sebagai file_path untuk parse_kak_pdf / parse_kontrak_pdf / parse_rab_pdf / ocr_pdf',
         ];
     }
 
@@ -2671,13 +3016,15 @@ class AiChatService
             $type = strtolower(trim($doc['type'] ?? ''));
             $path = $this->resolveFilePath($doc['file_path'] ?? '');
 
-            if (!$path) {
-                $results[] = ['type' => $type, 'error' => "File tidak ditemukan: " . ($doc['file_path'] ?? '')];
+            if (! $path) {
+                $results[] = ['type' => $type, 'error' => 'File tidak ditemukan: '.($doc['file_path'] ?? '')];
+
                 continue;
             }
             if ($this->ocrPending($path)) {
                 $results[] = ['type' => $type, 'file' => basename($path)] + $this->ocrPendingResponse();
                 $anyPending = true;
+
                 continue;
             }
 
@@ -2685,7 +3032,7 @@ class AiChatService
             if (($r['status'] ?? '') === 'processing') {
                 $results[] = ['type' => $type, 'file' => basename($path)] + $r;
                 $anyPending = true;
-            } elseif (!empty($r['ok'])) {
+            } elseif (! empty($r['ok'])) {
                 $results[] = ['type' => $type, 'file' => basename($path), 'ok' => true, 'data' => $r['data']];
             } else {
                 $results[] = ['type' => $type, 'file' => basename($path), 'error' => $r['error'] ?? 'parse gagal'];
@@ -2695,11 +3042,11 @@ class AiChatService
         // Qwen async: sebagian dokumen masih diproses → jangan aggregate dulu, suruh tunggu.
         if ($anyPending) {
             return [
-                'ok'      => false,
-                'status'  => 'processing',
+                'ok' => false,
+                'status' => 'processing',
                 'results' => $results,
-                'pesan'   => 'Sebagian/semua dokumen masih dianalisis AI lokal (Qwen) di background (~1-3 menit/dok). '
-                           . 'Tunggu sebentar lalu minta lagi — hasil yang sudah selesai tersimpan, tak akan diparse ulang.',
+                'pesan' => 'Sebagian/semua dokumen masih dianalisis AI lokal (Qwen) di background (~1-3 menit/dok). '
+                           .'Tunggu sebentar lalu minta lagi — hasil yang sudah selesai tersimpan, tak akan diparse ulang.',
             ];
         }
 
@@ -2712,19 +3059,27 @@ class AiChatService
             'termin_pembayaran' => [],
         ];
         foreach ($results as $r) {
-            if (empty($r['ok']) || empty($r['data'])) continue;
+            if (empty($r['ok']) || empty($r['data'])) {
+                continue;
+            }
             $d = $r['data'];
             // G6: first-non-empty menang; kalau dok kedua juga punya, JANGAN timpa diam-diam — log.
             foreach (['jadwal_pelaksanaan' => 'jadwal_pelaksanaan', 'milestones' => 'milestones', 'termin_pembayaran' => 'termin_pembayaran'] as $src => $dst) {
-                if (empty($d[$src])) continue;
+                if (empty($d[$src])) {
+                    continue;
+                }
                 if (empty($aggregated[$dst])) {
                     $aggregated[$dst] = $d[$src];
                 } else {
                     logger()->warning("parse_multiple_docs G6: '{$src}' dari dokumen '{$r['type']}' diabaikan (slot sudah terisi dari dokumen sebelumnya).");
                 }
             }
-            if (!empty($d['keluaran']))  $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['keluaran']);
-            if (!empty($d['pelaporan'])) $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['pelaporan']);
+            if (! empty($d['keluaran'])) {
+                $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['keluaran']);
+            }
+            if (! empty($d['pelaporan'])) {
+                $aggregated['keluaran_kak'] = array_merge($aggregated['keluaran_kak'], $d['pelaporan']);
+            }
             // G3b captureParseTruth sudah dilakukan di parseDoc/runParserSync (sumber tunggal).
         }
 
@@ -2748,32 +3103,36 @@ class AiChatService
     private function toolOcrPdf(array $input): array
     {
         $path = $this->resolveFilePath($input['file_path'] ?? '');
-        if (!$path) return ['error' => 'File tidak ditemukan: ' . ($input['file_path'] ?? '')];
+        if (! $path) {
+            return ['error' => 'File tidak ditemukan: '.($input['file_path'] ?? '')];
+        }
 
-        $upload = \App\Models\ChatUpload::where('abs_path', $path)->first();
+        $upload = ChatUpload::where('abs_path', $path)->first();
 
         // Cache OCR sudah ada → balikin langsung, tanpa Vision ulang.
         if ($upload && mb_strlen((string) $upload->ocr_text) >= 200) {
             return [
-                'ok'          => true,
+                'ok' => true,
                 'text_length' => mb_strlen($upload->ocr_text),
                 'text_preview' => mb_substr($upload->ocr_text, 0, 1500),
-                'full_text'   => $upload->ocr_text,
-                'pesan'       => 'OCR (dari cache). Lanjut parse_* kalau perlu structured data.',
+                'full_text' => $upload->ocr_text,
+                'pesan' => 'OCR (dari cache). Lanjut parse_* kalau perlu structured data.',
             ];
         }
 
         // Ada record chat upload → OCR berat jalan di queue, jangan nahan worker web.
         if ($upload) {
-            if (!$this->ocrPending($path)) {
-                \App\Jobs\OcrChatUpload::dispatch($upload->id, (int) ($input['max_pages'] ?? 8));
+            if (! $this->ocrPending($path)) {
+                OcrChatUpload::dispatch($upload->id, (int) ($input['max_pages'] ?? 8));
             }
+
             return $this->ocrPendingResponse();
         }
 
         // Tidak ada record (file bukan dari chat upload) → OCR sinkron (jarang).
         try {
-            $text = app(\App\Services\PdfOcrService::class)->ocr($path, (int) ($input['max_pages'] ?? 5));
+            $text = app(PdfOcrService::class)->ocr($path, (int) ($input['max_pages'] ?? 5));
+
             return [
                 'ok' => true,
                 'text_length' => mb_strlen($text),
