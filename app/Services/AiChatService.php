@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\OcrChatUpload;
 use App\Jobs\ParseChatDocument;
 use App\Jobs\ProbeChatUpload;
+use App\Services\DocumentGroupingService;
 use App\Models\ChatUpload;
 use App\Models\LaporanHarian;
 use App\Models\Master\Bidang;
@@ -88,6 +89,7 @@ class AiChatService
             'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_laporan_harian',
             'get_personil_proyek', 'get_milestone_pekerjaan', 'get_termin_pekerjaan', 'list_termin', 'get_rencana_pengadaan', 'get_my_pekerjaan',
             'search_audit_log', 'list_perusahaan', 'list_uploaded_files', 'find_uploaded_file',
+            'list_document_groups',
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'cross_check_rab_vs_kontrak',
         ];
@@ -595,6 +597,7 @@ class AiChatService
             'get_dashboard_stats', 'get_pekerjaan_list', 'get_pekerjaan_detail', 'get_my_pekerjaan',
             'parse_kak_pdf', 'parse_kontrak_pdf', 'parse_rab_pdf', 'parse_penawaran_pdf',
             'parse_multiple_docs', 'ocr_pdf', 'list_uploaded_files', 'find_uploaded_file',
+            'list_document_groups',
             'create_pekerjaan', 'update_pekerjaan', 'assign_vendor', 'assign_personil',
             'create_rencana_pengadaan', 'get_rencana_pengadaan', 'list_termin', 'cross_check_rab_vs_kontrak', 'list_perusahaan',
         ];
@@ -1235,6 +1238,13 @@ class AiChatService
                 ], 'required' => []],
             ]],
             ['type' => 'function', 'function' => [
+                'name' => 'list_document_groups',
+                'description' => 'Rekomendasi pengelompokan file upload yang BELUM diorganise: file mana saja yang kelihatannya satu paket pekerjaan (mis. KAK + SPK + RAB satu proyek), dikelompokkan by jenis pekerjaan + lokasi. Pakai kalau user tanya "file mana yang satu proyek", "kelompokkan dokumen", atau mau tahu organisasi dokumen.',
+                'parameters' => ['type' => 'object', 'properties' => [
+                    'search' => ['type' => 'string', 'description' => 'Opsional: filter label grup (mis. "cileunyi", "spald", "pagar")'],
+                ], 'required' => []],
+            ]],
+            ['type' => 'function', 'function' => [
                 'name' => 'ocr_pdf',
                 'description' => 'Force OCR untuk PDF hasil scan (image-based). Konversi page jadi gambar lalu extract teks via OpenAI Vision. Lebih lambat & mahal — pakai cuma kalau parser standar gagal (text ≈ 0).',
                 'parameters' => ['type' => 'object', 'properties' => [
@@ -1326,6 +1336,7 @@ class AiChatService
             'parse_multiple_docs' => $this->toolParseMultipleDocs($input),
             'list_uploaded_files' => $this->toolListUploadedFiles($input),
             'find_uploaded_file' => $this->toolFindUploadedFile($input),
+            'list_document_groups' => $this->toolListDocumentGroups($input),
             'ocr_pdf' => $this->toolOcrPdf($input),
             default => ['error' => "Tool '{$name}' tidak dikenali"],
         };
@@ -2960,6 +2971,32 @@ class AiChatService
                 'is_scanned_pdf' => $f->is_scanned_pdf,
                 'uploaded_at' => $f->created_at?->format('Y-m-d H:i'),
             ])->all(),
+        ];
+    }
+
+    private function toolListDocumentGroups(array $input): array
+    {
+        $uploads = ChatUpload::query()
+            ->when(auth()->id(), fn ($q) => $q->where('user_id', auth()->id()))
+            ->unorganized()
+            ->get();
+
+        $groups = app(DocumentGroupingService::class)->cluster($uploads);
+
+        if (! empty($input['search'])) {
+            $kw = mb_strtolower($input['search']);
+            $groups = array_values(array_filter($groups, fn ($g) => str_contains(mb_strtolower($g['label']), $kw)));
+        }
+
+        return [
+            'ok' => true,
+            'note' => 'Pengelompokan otomatis dari nama file (file yang belum diorganise). Tiap grup = dugaan satu paket pekerjaan.',
+            'group_count' => count($groups),
+            'groups' => array_map(fn ($g) => [
+                'paket' => $g['label'],
+                'jumlah_file' => $g['files']->count(),
+                'files' => $g['files']->map(fn ($f) => ['id' => $f->id, 'name' => $f->original_name])->all(),
+            ], $groups),
         ];
     }
 
