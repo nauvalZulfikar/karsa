@@ -2,11 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChatUpload;
 use App\Models\Dokumen;
+use App\Services\DocumentPreviewService;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 
 class DokumenController extends Controller
 {
+    /** Tampilkan isi file upload inline di browser (untuk halaman Organisasi Dokumen). */
+    public function previewChatUpload(ChatUpload $chatUpload, DocumentPreviewService $preview): Response
+    {
+        abort_unless(auth()->check(), 403);
+
+        return $preview->render($chatUpload);
+    }
+
     public function download(Dokumen $dokumen)
     {
         abort_unless(auth()->check(), 403);

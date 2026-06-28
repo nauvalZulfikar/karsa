@@ -12,4 +12,5 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dokumen/{dokumen}/download', [DokumenController::class, 'download'])->name('dokumen.download');
     Route::get('/dokumen/download/{encodedPath}', [DokumenController::class, 'downloadGenerated'])->name('dokumen.download.generated');
     Route::get('/import/template/{type}', [ImportTemplateController::class, 'download'])->name('import.template');
+    Route::get('/chat-upload/{chatUpload}/preview', [DokumenController::class, 'previewChatUpload'])->name('chat-upload.preview');
 });
