@@ -1,5 +1,7 @@
 <x-filament-panels::page>
     @php($items = $this->unorganized)
+    @php($recs = $this->recommendations)
+    @php($group = $this->selectedGroup)
 
     @if ($items->isEmpty())
         <x-filament::section>
@@ -10,6 +12,44 @@
             </div>
         </x-filament::section>
     @else
+        {{-- ── REKOMENDASI GRUP ── --}}
+        @if (! empty($recs))
+            <x-filament::section
+                icon="heroicon-o-sparkles"
+                icon-color="warning"
+                collapsible
+                :collapsed="(bool) $group">
+                <x-slot name="heading">Rekomendasi Grup ({{ count($recs) }})</x-slot>
+                <x-slot name="description">File yang sinyal namanya menunjuk ke satu paket pekerjaan — bisa diorganise sekaligus.</x-slot>
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    @foreach ($recs as $rec)
+                        @php($isSel = $selectedGroupKey === $rec['key'])
+                        <div @class([
+                            'rounded-xl border p-3 transition',
+                            'border-warning-400 ring-1 ring-warning-400 dark:border-warning-500' => $isSel,
+                            'border-gray-200 dark:border-gray-700' => ! $isSel,
+                        ])>
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ $rec['label'] }}</span>
+                                <x-filament::badge color="warning">{{ $rec['files']->count() }} file</x-filament::badge>
+                            </div>
+                            <ul class="mt-2 space-y-0.5 text-xs text-gray-500">
+                                @foreach ($rec['files'] as $f)
+                                    <li class="truncate">• {{ $f->original_name }}</li>
+                                @endforeach
+                            </ul>
+                            <div class="mt-3">
+                                <x-filament::button size="xs" color="warning" wire:click="selectGroup('{{ $rec['key'] }}')">
+                                    Organise grup ini
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </x-filament::section>
+        @endif
+
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
             {{-- ── KIRI: daftar file belum diorganise ── --}}
             <div class="lg:col-span-4">
@@ -47,14 +87,12 @@
                 </x-filament::section>
             </div>
 
-            {{-- ── KANAN: viewer + form organise ── --}}
+            {{-- ── KANAN: viewer + form ── --}}
             <div class="lg:col-span-8">
                 @if ($this->selected)
                     <div class="space-y-4">
                         <x-filament::section>
-                            <x-slot name="heading">
-                                <span class="break-all">{{ $this->selected->original_name }}</span>
-                            </x-slot>
+                            <x-slot name="heading"><span class="break-all">{{ $this->selected->original_name }}</span></x-slot>
                             <x-slot name="headerEnd">
                                 <x-filament::button tag="a" href="{{ route('chat-upload.preview', $this->selected->id) }}"
                                     target="_blank" size="sm" color="gray" icon="heroicon-o-arrow-top-right-on-square">
@@ -69,25 +107,65 @@
                                 title="Preview {{ $this->selected->original_name }}"></iframe>
                         </x-filament::section>
 
-                        <x-filament::section>
-                            <x-slot name="heading">Masukkan ke Proyek</x-slot>
+                        @if ($group)
+                            {{-- ── MODE GRUP: bulk organise ── --}}
+                            <x-filament::section icon="heroicon-o-rectangle-stack" icon-color="warning">
+                                <x-slot name="heading">Organise Grup: {{ $group['label'] }}</x-slot>
+                                <x-slot name="description">{{ $group['files']->count() }} file akan dimasukkan ke satu proyek (tipe ditebak otomatis dari nama).</x-slot>
 
-                            <form wire:submit="organize" class="space-y-4">
-                                {{ $this->form }}
+                                <div class="space-y-3">
+                                    <ul class="space-y-1 rounded-lg bg-gray-50 p-3 text-sm dark:bg-white/5">
+                                        @foreach ($group['files'] as $gf)
+                                            <li class="flex items-center justify-between gap-2">
+                                                <button type="button" wire:click="select({{ $gf->id }})"
+                                                    class="truncate text-left hover:underline {{ $selectedId === $gf->id ? 'font-semibold text-primary-600' : 'text-gray-700 dark:text-gray-300' }}">
+                                                    {{ $gf->original_name }}
+                                                </button>
+                                                <x-filament::badge color="gray">{{ \App\Models\Dokumen::$tipeOptions[$this->guessTipe($gf->original_name)] ?? '—' }}</x-filament::badge>
+                                            </li>
+                                        @endforeach
+                                    </ul>
 
-                                <div class="flex justify-end">
-                                    <x-filament::button type="submit" icon="heroicon-o-folder-arrow-down">
-                                        Simpan ke Dokumen Proyek
-                                    </x-filament::button>
+                                    <div>
+                                        <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Proyek Tujuan <span class="text-danger-500">*</span></label>
+                                        <select wire:model="groupPekerjaanId"
+                                            class="block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800">
+                                            <option value="">— pilih proyek —</option>
+                                            @foreach ($this->pekerjaanOptions() as $id => $nama)
+                                                <option value="{{ $id }}">{{ $nama }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+
+                                    <div class="flex justify-end gap-2">
+                                        <x-filament::button color="gray" wire:click="clearGroup">Batal</x-filament::button>
+                                        <x-filament::button wire:click="organizeGroup" icon="heroicon-o-folder-arrow-down"
+                                            wire:loading.attr="disabled" wire:target="organizeGroup">
+                                            Simpan {{ $group['files']->count() }} File
+                                        </x-filament::button>
+                                    </div>
                                 </div>
-                            </form>
-                        </x-filament::section>
+                            </x-filament::section>
+                        @else
+                            {{-- ── MODE SATUAN ── --}}
+                            <x-filament::section>
+                                <x-slot name="heading">Masukkan ke Proyek</x-slot>
+                                <form wire:submit="organize" class="space-y-4">
+                                    {{ $this->form }}
+                                    <div class="flex justify-end">
+                                        <x-filament::button type="submit" icon="heroicon-o-folder-arrow-down">
+                                            Simpan ke Dokumen Proyek
+                                        </x-filament::button>
+                                    </div>
+                                </form>
+                            </x-filament::section>
+                        @endif
                     </div>
                 @else
                     <x-filament::section>
                         <div class="py-16 text-center text-gray-400">
                             <x-filament::icon icon="heroicon-o-cursor-arrow-rays" class="mx-auto mb-3 h-8 w-8" />
-                            <p>Pilih file di sebelah kiri untuk melihat isinya & memasukkannya ke proyek.</p>
+                            <p>Pilih file di kiri, atau pilih <span class="font-medium text-warning-600">Rekomendasi Grup</span> di atas untuk organise sekaligus.</p>
                         </div>
                     </x-filament::section>
                 @endif
