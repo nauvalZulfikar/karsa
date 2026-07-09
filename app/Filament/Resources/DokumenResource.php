@@ -35,8 +35,22 @@ class DokumenResource extends Resource
 
             Forms\Components\Select::make('tipe')
                 ->label('Tipe Dokumen')
-                ->options(Dokumen::$tipeOptions)
-                ->required(),
+                ->options(Dokumen::tipeOptions())
+                ->searchable()
+                ->required()
+                ->createOptionForm([
+                    Forms\Components\TextInput::make('label')
+                        ->label('Nama Tipe Dokumen')
+                        ->required()
+                        ->placeholder('cth. Notulensi Rapat'),
+                ])
+                ->createOptionUsing(fn (array $data) => \App\Models\JenisDokumen::create([
+                    'label' => $data['label'],
+                    'color' => 'gray',
+                ])->key)
+                ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                    ->label('Tambah Tipe Dokumen')
+                    ->modalHeading('Tambah Tipe Dokumen')),
 
             Forms\Components\Grid::make(2)->schema([
                 Forms\Components\TextInput::make('nama_dokumen')
@@ -84,7 +98,7 @@ class DokumenResource extends Resource
 
                 Tables\Columns\TextColumn::make('tipe')
                     ->label('Tipe')
-                    ->formatStateUsing(fn ($state) => Dokumen::$tipeOptions[$state] ?? $state)
+                    ->formatStateUsing(fn ($state) => Dokumen::tipeOptions()[$state] ?? $state)
                     ->badge()
                     ->color(fn ($record) => $record->tipe_color)
                     ->sortable(),
@@ -119,7 +133,7 @@ class DokumenResource extends Resource
 
                 Tables\Filters\SelectFilter::make('tipe')
                     ->label('Tipe Dokumen')
-                    ->options(Dokumen::$tipeOptions),
+                    ->options(Dokumen::tipeOptions()),
             ])
             ->actions([
                 Tables\Actions\Action::make('download')

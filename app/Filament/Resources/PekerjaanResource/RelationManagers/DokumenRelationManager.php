@@ -20,8 +20,22 @@ class DokumenRelationManager extends RelationManager
         return $form->schema([
             Forms\Components\Select::make('tipe')
                 ->label('Tipe Dokumen')
-                ->options(Dokumen::$tipeOptions)
-                ->required(),
+                ->options(Dokumen::tipeOptions())
+                ->searchable()
+                ->required()
+                ->createOptionForm([
+                    Forms\Components\TextInput::make('label')
+                        ->label('Nama Tipe Dokumen')
+                        ->required()
+                        ->placeholder('cth. Notulensi Rapat'),
+                ])
+                ->createOptionUsing(fn (array $data) => \App\Models\JenisDokumen::create([
+                    'label' => $data['label'],
+                    'color' => 'gray',
+                ])->key)
+                ->createOptionAction(fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                    ->label('Tambah Tipe Dokumen')
+                    ->modalHeading('Tambah Tipe Dokumen')),
 
             Forms\Components\TextInput::make('nama_dokumen')
                 ->label('Nama Dokumen')
@@ -61,7 +75,7 @@ class DokumenRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('tipe')
                     ->label('Tipe')
-                    ->formatStateUsing(fn ($state) => Dokumen::$tipeOptions[$state] ?? $state)
+                    ->formatStateUsing(fn ($state) => Dokumen::tipeOptions()[$state] ?? $state)
                     ->badge()
                     ->color(fn ($record) => $record->tipe_color)
                     ->sortable(),
@@ -91,7 +105,7 @@ class DokumenRelationManager extends RelationManager
             ->filters([
                 Tables\Filters\SelectFilter::make('tipe')
                     ->label('Tipe')
-                    ->options(Dokumen::$tipeOptions),
+                    ->options(Dokumen::tipeOptions()),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()

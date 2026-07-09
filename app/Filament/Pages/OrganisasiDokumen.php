@@ -92,7 +92,7 @@ class OrganisasiDokumen extends Page implements HasForms
 
                 Select::make('tipe')
                     ->label('Tipe Dokumen')
-                    ->options(Dokumen::$tipeOptions)
+                    ->options(Dokumen::tipeOptions())
                     ->required(),
 
                 Grid::make(2)->schema([
